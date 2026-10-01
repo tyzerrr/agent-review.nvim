@@ -163,6 +163,24 @@ M.prev_file = with_session(function(s)
 	s:step(-1)
 end)
 
+---quickfixを1件ずつ移動し、端では反対側へ回り込む。:cnextは端でE553になるため:ccで位置を指定する。
+---@param delta integer
+function M.qf_step(delta)
+	local info = vim.fn.getqflist({ idx = 0, size = 0 })
+	if info.size == 0 then
+		return notify("quickfix list is empty", vim.log.levels.WARN)
+	end
+	vim.cmd.cc((info.idx - 1 + delta * vim.v.count1) % info.size + 1)
+end
+
+function M.qf_next()
+	M.qf_step(1)
+end
+
+function M.qf_prev()
+	M.qf_step(-1)
+end
+
 function M.files()
 	require("agent-review.picker").pick()
 end

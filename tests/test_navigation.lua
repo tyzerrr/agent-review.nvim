@@ -124,6 +124,76 @@ T["quickfix"]["can be disabled"] = function()
 	eq(child.lua_get([[vim.fn.getqflist({ title = 1 }).title]]), "")
 end
 
+T["quickfix"]["]q on the last entry wraps around to the first"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("clast")
+	child.lua("vim.wait(50)")
+	child.type_keys("]q")
+	child.lua("vim.wait(50)")
+	eq(right_name(), root .. "/a.lua")
+	eq(child.lua_get([[vim.fn.getqflist({ idx = 0 }).idx]]), 1)
+	eq(child.lua_get([[vim.api.nvim_win_get_cursor(0)[1] ]]), 4)
+end
+
+T["quickfix"]["[q on the first entry wraps around to the last"] = function()
+	setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("cfirst")
+	child.lua("vim.wait(50)")
+	child.type_keys("[q")
+	child.lua("vim.wait(50)")
+	eq(right_name(), "agent-review://deleted/d.lua")
+	eq(left_lines(), { "gone" })
+end
+
+T["quickfix"]["]q and [q step through entries in between"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("cfirst")
+	child.lua("vim.wait(50)")
+	child.type_keys("]q")
+	child.lua("vim.wait(50)")
+	eq(right_name(), root .. "/b.lua")
+	child.type_keys("[q")
+	child.lua("vim.wait(50)")
+	eq(right_name(), root .. "/a.lua")
+end
+
+T["quickfix"]["]q from the base window opens the entry on the right"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("clast")
+	child.lua("vim.wait(50)")
+	child.lua([[vim.api.nvim_set_current_win(require("agent-review")._session.left_win)]])
+	child.type_keys("]q")
+	child.lua("vim.wait(50)")
+	eq(right_name(), root .. "/a.lua")
+	eq(left_lines(), { "a1", "a2", "a3", "a4", "a5" })
+	eq(child.lua_get([[vim.api.nvim_get_current_win() == require("agent-review")._session.right_win]]), true)
+end
+
+T["quickfix"]["]q with an empty list warns instead of erroring"] = function()
+	setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.lua([[vim.fn.setqflist({}, "r", { items = {} })]])
+	child.lua([[_G.warned = nil; vim.notify = function(_, level) _G.warned = level end]])
+	child.type_keys("]q")
+	eq(child.lua_get("_G.warned"), vim.log.levels.WARN)
+	eq(child.lua_get("vim.v.errmsg"), "")
+end
+
+T["quickfix"]["refresh keeps the current entry selected"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("clast")
+	child.lua("vim.wait(50)")
+	H.write(root, "c.lua", { "c1", "c2" })
+	child.lua([[require("agent-review").refresh()]])
+	eq(child.lua_get([[vim.fn.getqflist({ idx = 0 }).idx]]), 4)
+	eq(child.lua_get([[vim.fn.getqflist()[vim.fn.getqflist({ idx = 0 }).idx].module]]), "d.lua")
+end
+
 T["redirect"] = MiniTest.new_set()
 
 T["redirect"]["a file opened in the base window moves to the right window"] = function()

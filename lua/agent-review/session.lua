@@ -86,8 +86,26 @@ function Session:update_quickfix(mode, opts)
 		context = { agent_review = true },
 	}
 	if self:qf_list_alive() then
+		-- "r"で置き換えると選択位置が先頭に戻るため、同じファイル（hunksなら同じ行も）の項目を選び直す。
+		local old = vim.fn.getqflist({ id = self.qf_id, idx = 0, items = 1 })
+		local cur = old.items[old.idx]
 		what.id = self.qf_id
 		vim.fn.setqflist({}, "r", what)
+		if cur then
+			local new_idx
+			for i, item in ipairs(vim.fn.getqflist({ id = self.qf_id, items = 1 }).items) do
+				if item.bufnr == cur.bufnr then
+					new_idx = new_idx or i
+					if item.lnum == cur.lnum then
+						new_idx = i
+						break
+					end
+				end
+			end
+			if new_idx then
+				vim.fn.setqflist({}, "a", { id = self.qf_id, idx = new_idx })
+			end
+		end
 	else
 		vim.fn.setqflist({}, " ", what)
 		self.qf_id = vim.fn.getqflist({ id = 0 }).id

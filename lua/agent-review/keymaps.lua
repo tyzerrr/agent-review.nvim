@@ -66,6 +66,20 @@ M.actions = {
 		end,
 		plug = "prev-file",
 	},
+	qf_next = {
+		desc = "Next quickfix entry (wraps around)",
+		fn = function()
+			ar().qf_next()
+		end,
+		plug = "qf-next",
+	},
+	qf_prev = {
+		desc = "Previous quickfix entry (wraps around)",
+		fn = function()
+			ar().qf_prev()
+		end,
+		plug = "qf-prev",
+	},
 	refresh = {
 		desc = "Refresh review",
 		fn = function()

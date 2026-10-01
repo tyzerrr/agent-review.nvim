@@ -45,6 +45,8 @@ M.defaults = {
 		review = {
 			next_file = "]f",
 			prev_file = "[f",
+			qf_next = "]q",
+			qf_prev = "[q",
 		},
 		-- base側（左）のバッファだけに設定されるキー。
 		-- 作業ツリー側にqを置かないのはマクロ記録と衝突するため。
