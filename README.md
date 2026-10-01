@@ -47,13 +47,14 @@ how the new code fits into the rest of the codebase. If you open the file normal
 - 🧭 **LSP-aware navigation**: go to definition, references and implementations across files, and the diff follows
 - 🎨 **VSCode-style colors**: removed lines are red and added lines are green, with stronger color on the changed characters (`inline:char`, `linematch`)
 - 🌳 **Syntax highlighting on both sides**: tree-sitter on the base side too, with no LSP diagnostics there
-- 📋 **Quickfix integration**: every changed file (or every hunk) goes into a quickfix list, so `]q` walks the whole review
+- 📋 **Quickfix integration**: every changed file (or every hunk) goes into a quickfix list, so `]q` walks the whole review and wraps around at either end
+- 🔄 **Auto refresh**: when the agent edits, creates or reverts files, the file list, quickfix, buffers and diff update by themselves, so you don't need to reopen the review
 - 🔭 **Telescope pickers**: changed files and changed hunks, with a syntax-highlighted inline diff preview
 - 🧹 **Handles every git status**: modified, added, untracked, deleted, renamed (diffed against the old path), gitignored and outside-repo files
 - 🤖 **Claude Code integration** ([claudecode.nvim](https://github.com/coder/claudecode.nvim)):
   - Select base-side lines and press `<C-l>` to send them to Claude
   - The Claude terminal moves into the review tab, and the windows re-balance when it opens, closes or resizes
-- 🛡️ **Safe**: it never writes to your working tree; base snapshots live under `.git/agent-review/`
+- 🛡️ **Safe**: it never writes to your working tree; base snapshots live under `.git/agent-review/`. Closing the review keeps your other windows (the Claude terminal, help, other files) on screen
 - ⌨️ **Fully remappable**: per-action keys, lists of keys, `false` to disable, custom actions, `<Plug>` mappings and `User` events
 
 ## Requirements
@@ -109,10 +110,11 @@ The base revision is resolved to a commit when the review opens, so if the agent
 | global | `<leader>dl` | Changed files picker |
 | global | `<leader>dh` | Changed hunks picker |
 | review (both sides) | `]f` / `[f` | Next / previous changed file |
+| review (both sides) | `]q` / `[q` | Next / previous quickfix entry, wrapping around at the ends |
 | base side | `q` | Close the review |
 | base side, visual | `<C-l>` | Send the selection to Claude Code |
 
-Built-in diff and quickfix motions also work: `]c` / `[c` (next / previous hunk) and `]q` / `[q` (next / previous quickfix entry).
+Built-in diff motions also work: `]c` / `[c` (next / previous hunk).
 On the working side, your normal mappings stay in place. Buffer-local mappings that the review replaces are restored when it closes.
 
 ### Customizing
@@ -172,6 +174,8 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `hunks` | `<Plug>(agent-review-hunks)` | Changed hunks picker |
 | `next_file` | `<Plug>(agent-review-next-file)` | Next changed file |
 | `prev_file` | `<Plug>(agent-review-prev-file)` | Previous changed file |
+| `qf_next` | `<Plug>(agent-review-qf-next)` | Next quickfix entry; after the last one, go back to the first |
+| `qf_prev` | `<Plug>(agent-review-qf-prev)` | Previous quickfix entry; before the first one, go to the last |
 | `refresh` | `<Plug>(agent-review-refresh)` | Reload the changed files and the diff |
 | `quickfix_files` | `<Plug>(agent-review-quickfix-files)` | Quickfix: one entry per file |
 | `quickfix_hunks` | `<Plug>(agent-review-quickfix-hunks)` | Quickfix: one entry per hunk |
@@ -189,7 +193,7 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `:AgentReviewFiles` | Pick a changed file |
 | `:AgentReviewHunks` | Pick a changed hunk |
 | `:AgentReviewQuickfix [files\|hunks]` | Rebuild the quickfix list and open it |
-| `:AgentReviewRefresh` | Reload the changed files and buffers after the agent made more edits |
+| `:AgentReviewRefresh` | Reload the changed files and buffers now (normally done for you, see `auto_refresh`) |
 
 ## Telescope
 
@@ -220,7 +224,8 @@ internal/service/user.go|3 col 1| modified  +16 -3
 
 - Each entry points at the first changed line.
 - `:AgentReviewQuickfix hunks` switches to one entry per hunk, so `]q` walks every change in the review.
-- Refreshing updates the same list instead of stacking new ones.
+- In the review windows `]q` / `[q` wrap around: after the last entry comes the first one, and before the first comes the last. A count works too (`3]q`).
+- Refreshing updates the same list instead of stacking new ones, and keeps the entry you are on selected.
 - Files opened from quickfix, Telescope or `:e` while the base window has focus are moved to the working window automatically, so the layout never breaks.
 
 ## Claude Code integration
@@ -228,8 +233,20 @@ internal/service/user.go|3 col 1| modified  +16 -3
 With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 
 - **Send base code**: select lines on the left and press `<C-l>`. The base version is written to `.git/agent-review/base-<sha>/<path>` (inside `.git`, so your working tree stays clean) and sent as a file mention with the line range. On the right side your own `ClaudeCodeSend` mapping works as usual.
-- **Terminal follows the review**: claudecode.nvim treats a terminal shown in another tab as visible, so toggling it from the review tab would hide it there instead. When a review opens, a visible Claude terminal moves into the review tab, and it goes back to its original tab when the review closes.
+- **Terminal follows the review**: claudecode.nvim treats a terminal shown in another tab as visible, so toggling it from the review tab would hide it there instead. When a review opens, a visible Claude terminal moves into the review tab, and it goes back to its original tab when the review closes. A Claude terminal you opened inside the review tab stays open too: it moves to the tab you came from.
+- **Other windows are kept**: any window you opened in the review tab that isn't part of the review (help, another file, another agent's terminal) is reopened in the tab you return to, so closing the review only closes the diff.
 - **Balanced layout**: opening, closing or resizing the Claude terminal re-balances the two diff windows. Resizing the diff windows yourself is left alone.
+
+## Auto refresh
+
+While a review is open, the repository is watched for file changes (`.git/` is ignored). When the agent writes files, the review refreshes after a short debounce:
+
+- New changes are added to the file list and quickfix, and reverted files drop out.
+- Buffers changed on disk are reloaded (`:checktime`) and the diff is recomputed.
+- It also refreshes on `FocusGained` and when you leave a terminal (`TermLeave`). On Linux, file watching only covers the top-level directory, so these events fill the gap.
+
+If you have unsaved edits in a buffer that the agent also changed, Neovim asks which version to keep as usual (`W12`); nothing is overwritten silently.
+Turn it off with `auto_refresh = false` and use `:AgentReviewRefresh` instead.
 
 ## Configuration
 
@@ -252,9 +269,13 @@ require("agent-review").setup({
     height = 8,
     mode = "files",       -- "files" | "hunks"
   },
+  auto_refresh = {        -- false to disable
+    enabled = true,
+    debounce = 200,       -- ms to wait so a burst of writes refreshes once
+  },
   keymaps = {
     global = { toggle = "<leader>dr", open_rev = "<leader>dR", files = "<leader>dl", hunks = "<leader>dh" },
-    review = { next_file = "]f", prev_file = "[f" },
+    review = { next_file = "]f", prev_file = "[f", qf_next = "]q", qf_prev = "[q" },
     base = { close = "q", send_to_claude = "<C-l>" },
   },
   claude = {
@@ -301,6 +322,7 @@ ar.toggle(base?)
 ar.next_file() / ar.prev_file()
 ar.files() / ar.hunks()     -- pickers
 ar.quickfix("files" | "hunks")
+ar.qf_next() / ar.qf_prev() -- quickfix, wrapping around
 ar.refresh()
 ```
 

@@ -62,7 +62,8 @@ are created by setup().
     it.
 
 :AgentReviewRefresh                                      *:AgentReviewRefresh*
-    Reload the changed files and buffers.
+    Reload the changed files and buffers. Usually not needed: see
+    |agent-review-auto-refresh|.
 
 ==============================================================================
 4. KEYMAPS                                              *agent-review-keymaps*
@@ -72,6 +73,7 @@ Defaults:
   global  <leader>dr  toggle          <leader>dR  open_rev
           <leader>dl  files           <leader>dh  hunks
   review  ]f          next_file       [f          prev_file
+          ]q          qf_next         [q          qf_prev
   base    q           close           <C-l> (x)   send_to_claude
 
 "review" keys are buffer-local on both review windows; "base" keys only on
@@ -90,6 +92,8 @@ Actions and their <Plug> mappings:
   hunks            <Plug>(agent-review-hunks)
   next_file        <Plug>(agent-review-next-file)
   prev_file        <Plug>(agent-review-prev-file)
+  qf_next          <Plug>(agent-review-qf-next)
+  qf_prev          <Plug>(agent-review-qf-prev)
   refresh          <Plug>(agent-review-refresh)
   quickfix_files   <Plug>(agent-review-quickfix-files)
   quickfix_hunks   <Plug>(agent-review-quickfix-hunks)
@@ -108,10 +112,12 @@ Actions and their <Plug> mappings:
     winbar = true,
     picker = "auto",            -- "auto" | "telescope" | "ui_select"
     quickfix = { auto = true, open = true, height = 8, mode = "files" },
+    auto_refresh = { enabled = true, debounce = 200 },  -- or false
     keymaps = {
       global = { toggle = "<leader>dr", open_rev = "<leader>dR",
                  files = "<leader>dl", hunks = "<leader>dh" },
-      review = { next_file = "]f", prev_file = "[f" },
+      review = { next_file = "]f", prev_file = "[f",
+                 qf_next = "]q", qf_prev = "[q" },
       base = { close = "q", send_to_claude = "<C-l>" },
     },
     claude = { focus_after_send = true, terminal_pattern = "claude",
@@ -121,12 +127,23 @@ Actions and their <Plug> mappings:
 <
 'diffopt' is applied only while a review is open and restored afterwards.
 
+                                                   *agent-review-auto-refresh*
+While a review is open, the repository is watched for file changes (`.git/`
+is ignored), and the review refreshes `auto_refresh.debounce` ms after the
+last write: the file list and quickfix are rebuilt, changed buffers are
+reloaded with |:checktime| and the diff is updated. |FocusGained| and
+|TermLeave| also refresh, which covers Linux, where only the top-level
+directory can be watched. Buffers with unsaved edits are never overwritten
+silently (|W12|).
+
 ==============================================================================
 6. PICKERS AND QUICKFIX                                 *agent-review-pickers*
 
 When a review opens, the changed files are put into a quickfix list titled
 "Agent Review: <base>" and its window opens at the bottom of the review tab.
 Files opened from the base window are moved to the working window.
+In the review windows `]q` and `[q` wrap around at the ends of the list and
+accept a count. Refreshing keeps the current entry selected.
 
 Telescope extension:
 >vim
@@ -142,8 +159,12 @@ added lines in green and removed lines as red virtual lines.
 With claudecode.nvim, select lines in the base window and press <C-l>. The
 base file is written to `.git/agent-review/base-<sha>/<path>` and sent as a
 file mention with the line range. A visible Claude terminal is moved into the
-review tab and restored to its original tab on close. Opening, closing or
-resizing it re-balances the diff windows.
+review tab and restored to its original tab on close; one opened inside the
+review tab moves to the tab you came from. Opening, closing or resizing it
+re-balances the diff windows.
+
+Other windows you opened in the review tab (help, other files, other
+terminals) are reopened in the tab you return to when the review closes.
 
 ==============================================================================
 8. LUA API AND EVENTS                                       *agent-review-api*
@@ -158,6 +179,7 @@ resizing it re-balances the diff windows.
   ar.next_file()  ar.prev_file()
   ar.files()      ar.hunks()
   ar.quickfix("files" | "hunks")
+  ar.qf_next()    ar.qf_prev()
   ar.refresh()
 <
                                     *AgentReviewOpen* *AgentReviewClose*
