@@ -33,6 +33,18 @@ end, { desc = "Close the review session" })
 cmd("AgentReviewFiles", function()
 	require("agent-review").files()
 end, { desc = "Pick a changed file" })
+cmd("AgentReviewHunks", function()
+	require("agent-review").hunks()
+end, { desc = "Pick a changed hunk" })
+cmd("AgentReviewQuickfix", function(o)
+	require("agent-review").quickfix(o.args ~= "" and o.args or nil)
+end, {
+	nargs = "?",
+	complete = function()
+		return { "files", "hunks" }
+	end,
+	desc = "Send changed files (or hunks) to the quickfix list",
+})
 cmd("AgentReviewRefresh", function()
 	require("agent-review").refresh()
 end, { desc = "Reload changed files and diff" })

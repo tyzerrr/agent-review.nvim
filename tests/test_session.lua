@@ -72,7 +72,8 @@ T["open"]["creates a new tab with base on the left and working tree on the right
 	local s = state()
 	eq(s.tab_is_current, true)
 	eq(child.lua_get("#vim.api.nvim_list_tabpages()"), 2)
-	eq(child.lua_get("#vim.api.nvim_tabpage_list_wins(0)"), 2)
+	-- 左右のdiff窓 + 下部のquickfix
+	eq(child.lua_get("#vim.api.nvim_tabpage_list_wins(0)"), 3)
 	eq(s.current_is_right, true)
 	eq(s.right.name, root .. "/a.lua")
 	eq(s.right.buftype, "")

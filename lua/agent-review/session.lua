@@ -1,3 +1,4 @@
+local changes = require("agent-review.changes")
 local config = require("agent-review.config")
 local git = require("agent-review.git")
 local highlight = require("agent-review.highlight")
@@ -40,11 +41,67 @@ function Session:valid()
 		and api.nvim_win_is_valid(self.right_win)
 end
 
+local function signature(files)
+	return table.concat(
+		vim.tbl_map(function(f)
+			return f.status .. f.path
+		end, files),
+		"\0"
+	)
+end
+
 function Session:refresh_files()
+	local before = signature(self.files)
 	self.files = git.changed_files(self.root, self.base_sha)
 	self.file_index = {}
 	for i, f in ipairs(self.files) do
 		self.file_index[f.path] = i
+	end
+	if self.qf_id and signature(self.files) ~= before then
+		self:update_quickfix()
+	end
+end
+
+function Session:qf_list_alive()
+	return self.qf_id and vim.fn.getqflist({ id = self.qf_id }).id == self.qf_id
+end
+
+---@param mode? "files"|"hunks"
+---@param opts? { resolve_deleted?: boolean }
+function Session:update_quickfix(mode, opts)
+	mode = mode or self.qf_mode or config.options.quickfix.mode
+	self.qf_mode = mode
+	local resolve = (opts or {}).resolve_deleted ~= false
+			and function(f)
+				if f.status == "D" then
+					return self:deleted_buffer(f.path)
+				end
+			end
+		or nil
+	local list = changes.collect(self.root, self.base_sha, self.files)
+	local what = {
+		title = "Agent Review: " .. self.base .. (mode == "hunks" and " (hunks)" or ""),
+		items = changes.qf_items(self.root, list, mode, resolve),
+		context = { agent_review = true },
+	}
+	if self:qf_list_alive() then
+		what.id = self.qf_id
+		vim.fn.setqflist({}, "r", what)
+	else
+		vim.fn.setqflist({}, " ", what)
+		self.qf_id = vim.fn.getqflist({ id = 0 }).id
+	end
+end
+
+function Session:open_quickfix_window()
+	if not self:valid() then
+		return
+	end
+	local cur = api.nvim_get_current_win()
+	api.nvim_set_current_win(self.right_win)
+	vim.cmd("botright copen " .. config.options.quickfix.height)
+	if api.nvim_win_is_valid(cur) then
+		api.nvim_set_current_win(cur)
 	end
 end
 
@@ -218,12 +275,18 @@ function Session:sync()
 	local ok, err = pcall(function()
 		local buf = api.nvim_win_get_buf(self.right_win)
 		local rel = self:rel_path(buf)
+		local f = rel and self:file(rel)
+		if f and f.status == "D" and vim.bo[buf].buftype == "" and not vim.uv.fs_stat(self.root .. "/" .. rel) then
+			-- 削除済みファイルを:eで開くと空の実バッファになり、誤って保存すると復活してしまう。
+			buf = self:deleted_buffer(rel)
+			api.nvim_win_set_buf(self.right_win, buf)
+		end
 		local left = rel and self:base_buffer(rel)
 		if left then
 			if api.nvim_win_get_buf(self.left_win) ~= left then
 				api.nvim_win_set_buf(self.left_win, left)
 			end
-			local f = self:file(rel)
+			f = self:file(rel)
 			local note = f and (f.status == "A" or f.status == "?") and "new file" or nil
 			set_diff(self.left_win, true)
 			set_diff(self.right_win, true)
@@ -235,6 +298,7 @@ function Session:sync()
 			set_diff(self.right_win, false)
 			self:update_winbar(nil)
 		end
+		self.left_base_buf = api.nvim_win_get_buf(self.left_win)
 		highlight.apply(self.left_win, "base")
 		highlight.apply(self.right_win, "work")
 		self:map_work_buffer(buf)
@@ -285,21 +349,37 @@ function Session:step(delta)
 	self:show(self.files[next_idx].path)
 end
 
-local function status_label(f)
-	local labels =
-		{ M = "modified", A = "added", D = "deleted", R = "renamed", C = "copied", T = "type", ["?"] = "untracked" }
-	local path = f.old_path and (f.old_path .. " -> " .. f.path) or f.path
-	return ("%-9s %s"):format(labels[f.status] or f.status, path)
+function Session:pick()
+	require("agent-review.picker").pick()
 end
 
-function Session:pick()
-	self:refresh_files()
-	vim.ui.select(self.files, { prompt = "Agent Review: changed files", format_item = status_label }, function(choice)
-		if choice and self:valid() then
-			self:show(choice.path)
-			api.nvim_set_current_win(self.right_win)
-		end
-	end)
+function Session:pick_hunks()
+	require("agent-review.picker").pick_hunks()
+end
+
+---左窓（base）に実ファイルが開かれたら右窓へ移す。
+---telescopeやquickfixは「直前の窓」に開くため、左窓から操作すると左に入ってしまう。
+function Session:redirect_from_left()
+	if not self:valid() then
+		return
+	end
+	local buf = api.nvim_win_get_buf(self.left_win)
+	if vim.b[buf].agent_review_side == "base" then
+		return
+	end
+	local cursor = api.nvim_win_get_cursor(self.left_win)
+	local focused = api.nvim_get_current_win() == self.left_win
+	local back = self.left_base_buf
+	if not (back and api.nvim_buf_is_valid(back)) then
+		back = self:placeholder("")
+	end
+	api.nvim_win_set_buf(self.left_win, back)
+	api.nvim_win_set_buf(self.right_win, buf)
+	pcall(api.nvim_win_set_cursor, self.right_win, cursor)
+	if focused then
+		api.nvim_set_current_win(self.right_win)
+	end
+	self:sync()
 end
 
 -- 既存のバッファローカルマッピングを退避してから上書きし、終了時に戻す。
@@ -401,6 +481,13 @@ function Session:open(initial_rel)
 
 	self:attach_autocmds()
 	self:show(initial_rel)
+	local qf = config.options.quickfix
+	if qf.auto then
+		self:update_quickfix()
+		if qf.open then
+			self:open_quickfix_window()
+		end
+	end
 	require("agent-review.claude").bring_terminal(self)
 
 	if
@@ -419,6 +506,15 @@ function Session:attach_autocmds()
 		group = group,
 		nested = true,
 		callback = function()
+			if self:valid() and api.nvim_get_current_win() == self.left_win then
+				if vim.b[api.nvim_win_get_buf(self.left_win)].agent_review_side ~= "base" and not self.syncing then
+					-- 開いた側がカーソル位置を設定し終わってから移す。
+					vim.schedule(function()
+						self:redirect_from_left()
+					end)
+				end
+				return
+			end
 			if self:valid() and api.nvim_get_current_win() == self.right_win then
 				local buf = api.nvim_win_get_buf(self.right_win)
 				if buf ~= self.synced_buf or self.current_rel == nil then
@@ -487,6 +583,11 @@ function Session:close()
 				pcall(api.nvim_win_close, self.left_win, true)
 			end
 		end
+	end
+
+	if self:qf_list_alive() and next(self.deleted_bufs) then
+		-- 削除ファイル用のバッファを消すとエントリが壊れるので、パス指定に戻しておく。
+		pcall(self.update_quickfix, self, self.qf_mode, { resolve_deleted = false })
 	end
 
 	local scratch = vim.list_extend(vim.tbl_values(self.base_bufs), vim.tbl_values(self.deleted_bufs))

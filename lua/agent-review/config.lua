@@ -19,10 +19,22 @@ M.defaults = {
 	-- 片側にしかない行の反対側に表示する埋め草文字。
 	fillchar = "╱",
 	winbar = true,
+	-- "auto": telescope.nvimがあれば使い、無ければvim.ui.select。"telescope" | "ui_select" で固定もできる。
+	picker = "auto",
+	quickfix = {
+		-- レビューを開いた時に変更ファイルをquickfixリストへ入れる。
+		auto = true,
+		-- レビュータブの下部にquickfixウィンドウを開く。
+		open = true,
+		height = 8,
+		-- "files": 1ファイル1行 / "hunks": 変更箇所ごとに1行
+		mode = "files",
+	},
 	keymaps = {
 		next_file = "]f",
 		prev_file = "[f",
 		files = "<leader>dl",
+		hunks = "<leader>dh",
 		close = "q", -- base側のウィンドウでのみ有効（作業ツリー側はマクロ記録と衝突するため）
 		send_to_claude = "<C-l>", -- base側のビジュアル選択をClaude Codeに送る
 	},

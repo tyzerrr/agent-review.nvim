@@ -41,42 +41,74 @@ local function detect_root()
 	return git.root(vim.fn.getcwd())
 end
 
+---比較に必要な情報を解決する。セッションが無くてもピッカー等から使えるようにしている。
+---@return { root: string, base: string, base_sha: string }|nil, string|nil err
+function M.resolve(base)
+	base = base or config.options.base
+	local root = detect_root()
+	if not root then
+		return nil, "not inside a git repository"
+	end
+	local sha = git.resolve_rev(root, base)
+	if not sha then
+		return nil, "unknown revision: " .. base
+	end
+	return { root = root, base = base, base_sha = sha }
+end
+
 ---@param base? string 比較元のrev。省略時はconfig.base
-function M.open(base)
+---@param opts? { path?: string } 最初に表示するroot相対パス
+function M.open(base, opts)
+	opts = opts or {}
 	local s = active()
 	if s then
 		if base == nil or base == s.base then
 			api.nvim_set_current_tabpage(s.tab)
+			if opts.path then
+				s:show(opts.path)
+			end
 			return
 		end
 		M.close()
 	end
-	base = base or config.options.base
 
-	local root = detect_root()
-	if not root then
-		return notify("not inside a git repository", vim.log.levels.ERROR)
-	end
-	local sha = git.resolve_rev(root, base)
-	if not sha then
-		return notify("unknown revision: " .. base, vim.log.levels.ERROR)
+	local ctx, err = M.resolve(base)
+	if not ctx then
+		return notify(err, vim.log.levels.ERROR)
 	end
 
 	highlight.setup()
 	local Session = require("agent-review.session")
-	s = Session.new(root, base, sha)
+	s = Session.new(ctx.root, ctx.base, ctx.base_sha)
 	s:refresh_files()
 	if #s.files == 0 then
 		pcall(api.nvim_del_augroup_by_id, s.augroup)
-		return notify("no changes against " .. base)
+		return notify("no changes against " .. ctx.base)
 	end
 
-	local initial = s:rel_path(api.nvim_get_current_buf())
-	if not (initial and s:file(initial)) then
+	local initial = opts.path or s:rel_path(api.nvim_get_current_buf())
+	if not (initial and (opts.path or s:file(initial))) then
 		initial = s.files[1].path
 	end
 	M._session = s
 	s:open(initial)
+end
+
+---レビューを（必要なら開いて）指定ファイル・行へ移動する。ピッカーからの遷移先。
+---@param rel string root相対パス
+---@param lnum? integer
+function M.open_at(rel, lnum)
+	M.open(nil, { path = rel })
+	local s = active()
+	if not s then
+		return
+	end
+	api.nvim_set_current_win(s.right_win)
+	if lnum then
+		local last = api.nvim_buf_line_count(api.nvim_win_get_buf(s.right_win))
+		pcall(api.nvim_win_set_cursor, s.right_win, { math.min(math.max(lnum, 1), last), 0 })
+		vim.cmd("normal! zz")
+	end
 end
 
 function M.close()
@@ -113,8 +145,19 @@ M.prev_file = with_session(function(s)
 	s:step(-1)
 end)
 
-M.files = with_session(function(s)
-	s:pick()
+function M.files()
+	require("agent-review.picker").pick()
+end
+
+function M.hunks()
+	require("agent-review.picker").pick_hunks()
+end
+
+---@param mode? "files"|"hunks"
+M.quickfix = with_session(function(s, mode)
+	s:refresh_files()
+	s:update_quickfix(mode)
+	s:open_quickfix_window()
 end)
 
 ---@param rel string root相対パス
@@ -124,6 +167,9 @@ end)
 
 M.refresh = with_session(function(s)
 	s:refresh_files()
+	if s.qf_id then
+		s:update_quickfix()
+	end
 	vim.cmd("checktime")
 	s:sync()
 	if vim.wo[s.right_win].diff then
