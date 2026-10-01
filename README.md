@@ -9,7 +9,7 @@
 ![Lua](https://img.shields.io/badge/Lua-2C2D72?logo=lua&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[![Demo](docs/demo.jpg)](docs/demo.mp4)
+[![Demo](assets/demo.jpg)](assets/demo.mp4)
 
 <sub>▶ Click the image to watch the demo (54s, mp4)</sub>
 
@@ -370,7 +370,7 @@ Set `quickfix = { open = false }` to only fill the list, or `quickfix = { auto =
 ```sh
 make test                                   # all tests (mini.test, headless; clones test deps into ./deps)
 make test-file FILE=tests/test_session.lua  # a single file
-nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record docs/demo.mp4
+nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record assets/demo.mp4
 ```
 
 Tests run against real git repositories in temp directories. Only external plugins (claudecode.nvim) are stubbed.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# デモ用のGoリポジトリを作る（docs/demo.tape から使用）。
+# デモ用のGoリポジトリを作る（scripts/demo/demo.tape から使用）。
 # 使い方: scripts/demo/setup.sh <dir>
 set -euo pipefail
 dir="${1:?usage: setup.sh <dir>}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# README用のデモ動画 docs/demo.mp4 を作る。
+# README用のデモ動画 assets/demo.mp4 を作る。
 # vhs組み込みのGIF変換は環境によって無言で失敗するため、vhsにはフレームの書き出しだけをさせ、
 # 合成と圧縮はffmpegで行う。必要: vhs, ttyd, ffmpeg(libx264), nvim, gopls
 #   例) nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh
@@ -8,10 +8,10 @@ cd "$(dirname "$0")/../.."
 
 fps=24
 bg=0x1e1e1e
-out=docs/demo.mp4
+out=assets/demo.mp4
 
 rm -rf .demo-frames
-vhs docs/demo.tape
+vhs scripts/demo/demo.tape
 
 size=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 .demo-frames/frame-text-00001.png)
 
