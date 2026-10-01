@@ -471,6 +471,7 @@ function Session:open(initial_rel)
 	end
 	vim.o.diffopt = table.concat(items, ",")
 
+	self.origin_tab = api.nvim_get_current_tabpage()
 	vim.cmd("tabnew")
 	self.tab = api.nvim_get_current_tabpage()
 	self.right_win = api.nvim_get_current_win()
@@ -599,6 +600,46 @@ function Session:unwatch()
 	end
 end
 
+---レビュータブにあるレビューと無関係な窓（ヘルプ・別ファイル・エージェントのターミナル等）。
+---タブを閉じると一緒に消えてしまうので、閉じた後に戻り先のタブで表示し直す。
+---@param skip_buf? integer claudecode.nvimのターミナル。claudecode自身のAPIで戻すので除外する。
+function Session:foreign_windows(skip_buf)
+	local out = {}
+	for _, win in ipairs(api.nvim_tabpage_list_wins(self.tab)) do
+		local buf = api.nvim_win_get_buf(win)
+		local info = vim.fn.getwininfo(win)[1]
+		if
+			win ~= self.left_win
+			and win ~= self.right_win
+			and buf ~= skip_buf
+			and api.nvim_win_get_config(win).relative == ""
+			and info.quickfix == 0
+		then
+			table.insert(out, {
+				buf = buf,
+				width = api.nvim_win_get_width(win),
+				height = api.nvim_win_get_height(win),
+				vertical = api.nvim_win_get_width(win) < vim.o.columns,
+			})
+		end
+	end
+	return out
+end
+
+local function restore_windows(list)
+	for _, w in ipairs(list) do
+		if api.nvim_buf_is_valid(w.buf) then
+			-- win = -1 で現在のタブの端（botright相当）に分割し、フォーカスは動かさない。
+			pcall(api.nvim_open_win, w.buf, false, {
+				split = w.vertical and "right" or "below",
+				win = -1,
+				width = w.vertical and w.width or nil,
+				height = (not w.vertical) and w.height or nil,
+			})
+		end
+	end
+end
+
 function Session:close()
 	if self.closed then
 		return
@@ -621,9 +662,14 @@ function Session:close()
 		end
 	end
 
+	local foreign = {}
 	if self.tab and api.nvim_tabpage_is_valid(self.tab) then
 		if #api.nvim_list_tabpages() > 1 then
+			foreign = self:foreign_windows(claude.terminal_buf())
 			pcall(vim.cmd.tabclose, api.nvim_tabpage_get_number(self.tab))
+			if self.origin_tab and api.nvim_tabpage_is_valid(self.origin_tab) then
+				api.nvim_set_current_tabpage(self.origin_tab)
+			end
 		else
 			if api.nvim_win_is_valid(self.right_win) then
 				set_diff(self.right_win, false)
@@ -654,6 +700,7 @@ function Session:close()
 	end
 
 	claude.restore_terminal(self, claude_visible)
+	restore_windows(foreign)
 end
 
 return Session

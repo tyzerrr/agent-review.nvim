@@ -109,14 +109,17 @@ function M.bring_terminal(session)
 	end
 end
 
----レビュー終了時、持ってきたターミナルが表示されたままなら元のタブで再表示する。
+---レビュー終了時、レビュータブで表示されていたターミナルを再表示する。
+---別タブから持ってきた場合はそのタブへ、レビュータブで開いた場合は今のタブへ戻す。
 function M.restore_terminal(session, was_visible)
-	local origin = session.claude_origin_tab
 	local terminal = terminal_api()
-	if not (origin and was_visible and terminal and api.nvim_tabpage_is_valid(origin)) then
+	if not (was_visible and terminal) then
 		return
 	end
-	api.nvim_set_current_tabpage(origin)
+	local origin = session.claude_origin_tab
+	if origin and api.nvim_tabpage_is_valid(origin) then
+		api.nvim_set_current_tabpage(origin)
+	end
 	local cur = api.nvim_get_current_win()
 	pcall(terminal.ensure_visible)
 	if api.nvim_win_is_valid(cur) then
@@ -124,10 +127,15 @@ function M.restore_terminal(session, was_visible)
 	end
 end
 
+---@return integer|nil
+function M.terminal_buf()
+	local terminal = terminal_api()
+	return terminal and terminal.get_active_terminal_bufnr()
+end
+
 ---@return boolean
 function M.terminal_visible_in(tab)
-	local terminal = terminal_api()
-	local buf = terminal and terminal.get_active_terminal_bufnr()
+	local buf = M.terminal_buf()
 	return buf ~= nil and tab ~= nil and api.nvim_tabpage_is_valid(tab) and #windows_in_tab(buf, tab) > 0
 end
 

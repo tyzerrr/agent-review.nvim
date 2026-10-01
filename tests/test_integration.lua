@@ -191,6 +191,36 @@ T["claude terminal"]["is restored to the original tab on close"] = function()
 	eq(claude_tabs(), { 1 })
 end
 
+T["claude terminal"]["opened inside the review tab survives close"] = function()
+	local root = H.make_repo({ ["a.lua"] = { "x" } })
+	H.write(root, "a.lua", { "y" })
+	child.lua("vim.cmd.cd(...)", { root })
+	child.lua([[require("agent-review").open()]])
+	mock_claude_terminal()
+	eq(claude_tabs(), { 2 })
+	child.lua([[require("agent-review").close()]])
+	child.lua("vim.wait(100)")
+	eq(claude_tabs(), { 1 })
+	eq(child.lua_get("vim.api.nvim_get_current_tabpage()"), child.lua_get("vim.api.nvim_list_tabpages()[1]"))
+end
+
+T["claude terminal"]["stays visible across toggling the review off and on"] = function()
+	local root = H.make_repo({ ["a.lua"] = { "x" } })
+	H.write(root, "a.lua", { "y" })
+	child.lua("vim.cmd.cd(...)", { root })
+	child.lua([[require("agent-review").toggle()]])
+	mock_claude_terminal()
+	child.lua([[require("agent-review").toggle()]])
+	child.lua("vim.wait(100)")
+	eq(claude_tabs(), { 1 })
+	child.lua([[require("agent-review").toggle()]])
+	child.lua("vim.wait(100)")
+	eq(claude_tabs(), { 2 })
+	child.lua([[require("agent-review").toggle()]])
+	child.lua("vim.wait(100)")
+	eq(claude_tabs(), { 1 })
+end
+
 T["claude terminal"]["is left alone when it was hidden"] = function()
 	local root = H.make_repo({ ["a.lua"] = { "x" } })
 	H.write(root, "a.lua", { "y" })
@@ -204,6 +234,43 @@ T["claude terminal"]["is left alone when it was hidden"] = function()
 	child.lua([[require("agent-review").close()]])
 	child.lua("vim.wait(100)")
 	eq(claude_tabs(), {})
+end
+
+T["other windows"] = MiniTest.new_set()
+
+local function tab_buf_names()
+	return child.lua([[
+		return vim.tbl_map(function(w)
+			return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(w))
+		end, vim.api.nvim_tabpage_list_wins(0))
+	]])
+end
+
+T["other windows"]["opened in the review tab are moved back on close"] = function()
+	local root = H.make_repo({ ["a.lua"] = { "x" } })
+	H.write(root, "a.lua", { "y" })
+	H.write(root, "notes.md", { "memo" })
+	child.lua("vim.cmd.cd(...)", { root })
+	child.lua([[require("agent-review").open()]])
+	child.cmd("botright 40vsplit " .. root .. "/notes.md")
+	child.lua([[require("agent-review").close()]])
+	child.lua("vim.wait(100)")
+	eq(child.lua_get("#vim.api.nvim_list_tabpages()"), 1)
+	local names = tab_buf_names()
+	eq(vim.tbl_contains(names, root .. "/notes.md"), true)
+	eq(child.lua_get([[vim.fn.winwidth(vim.fn.bufwinid(...))]], { root .. "/notes.md" }), 40)
+end
+
+T["other windows"]["review-owned windows are not carried over"] = function()
+	local root = H.make_repo({ ["a.lua"] = { "x" } })
+	H.write(root, "a.lua", { "y" })
+	child.lua("vim.cmd.cd(...)", { root })
+	child.lua([[require("agent-review").open()]])
+	eq(child.lua_get([[vim.fn.getqflist({ winid = 0 }).winid ~= 0]]), true)
+	child.lua([[require("agent-review").close()]])
+	child.lua("vim.wait(100)")
+	eq(child.lua_get("#vim.api.nvim_tabpage_list_wins(0)"), 1)
+	eq(child.lua_get([[vim.fn.getqflist({ winid = 0 }).winid]]), 0)
 end
 
 return T
