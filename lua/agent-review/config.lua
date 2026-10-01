@@ -30,6 +30,12 @@ M.defaults = {
 		-- "files": 1ファイル1行 / "hunks": 変更箇所ごとに1行
 		mode = "files",
 	},
+	-- エージェントがファイルを書き換えたら自動でrefreshする。false で無効。
+	auto_refresh = {
+		enabled = true,
+		-- 連続した書き込みを1回のrefreshにまとめる待ち時間(ms)
+		debounce = 200,
+	},
 	-- 値は "キー" | { "キー", ... } | false（無効）。keymaps = false で全て無効。
 	-- 操作名の一覧は lua/agent-review/keymaps.lua の actions を参照。
 	-- 未知の名前に { "キー", function(session) end, desc = "", mode = "n" } を渡すと独自の操作を追加できる。

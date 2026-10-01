@@ -548,6 +548,55 @@ function Session:attach_autocmds()
 	})
 	api.nvim_create_autocmd("ColorScheme", { group = group, callback = highlight.setup })
 	require("agent-review.resize").attach(self)
+	self:watch()
+end
+
+---作業ツリーの変更を監視して自動でrefreshする。
+function Session:watch()
+	local opts = config.options.auto_refresh
+	if not (opts and opts.enabled ~= false) then
+		return
+	end
+	local timer = vim.uv.new_timer()
+	self.refresh_timer = timer
+	local function schedule_refresh()
+		if timer:is_closing() then
+			return
+		end
+		timer:stop()
+		timer:start(
+			opts.debounce or 200,
+			0,
+			vim.schedule_wrap(function()
+				if self:valid() and require("agent-review")._session == self then
+					require("agent-review").refresh()
+				end
+			end)
+		)
+	end
+	local watcher = vim.uv.new_fs_event()
+	-- recursiveはmacOS/Windowsのみ。Linuxでは直下しか監視できないので下のautocmdで補う。
+	if watcher and watcher:start(self.root, { recursive = true }, function(err, filename)
+		-- git自身の書き込み（refresh中のgit statusやClaudeへの送信用ファイル）で無限ループしないよう.gitは無視する。
+		if err or (filename and (filename == ".git" or filename:sub(1, 5) == ".git/")) then
+			return
+		end
+		schedule_refresh()
+	end) then
+		self.fs_watcher = watcher
+	elseif watcher then
+		watcher:close()
+	end
+	-- BufEnterはsync()自身が発火させるのでrefreshが止まらなくなる。ここには含めない。
+	api.nvim_create_autocmd({ "FocusGained", "TermLeave" }, { group = self.augroup, callback = schedule_refresh })
+end
+
+function Session:unwatch()
+	for _, handle in ipairs({ self.fs_watcher, self.refresh_timer }) do
+		if handle and not handle:is_closing() then
+			handle:close()
+		end
+	end
 end
 
 function Session:close()
@@ -555,6 +604,7 @@ function Session:close()
 		return
 	end
 	self.closed = true
+	self:unwatch()
 	pcall(api.nvim_del_augroup_by_id, self.augroup)
 	local claude = require("agent-review.claude")
 	local claude_visible = claude.terminal_visible_in(self.tab)

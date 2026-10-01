@@ -335,6 +335,100 @@ T["close"]["toggle opens and closes"] = function()
 	eq(child.lua_get([[require("agent-review")._session]]), vim.NIL)
 end
 
+T["auto refresh"] = MiniTest.new_set()
+
+local function wait_for(expr)
+	return child.lua(("return vim.wait(3000, function() return %s end, 20)"):format(expr))
+end
+
+local function count_refreshes()
+	child.lua([[
+		_G.refreshes = 0
+		local ar = require("agent-review")
+		local orig = ar.refresh
+		ar.refresh = function(...) _G.refreshes = _G.refreshes + 1; return orig(...) end
+	]])
+end
+
+T["auto refresh"]["picks up files the agent changes after opening"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	local before = child.lua_get("#vim.fn.getqflist()")
+	H.write(root, "c.lua", { "-- changed by the agent", "return 3" })
+	eq(wait_for(("#vim.fn.getqflist() == %d"):format(before + 1)), true)
+	eq(child.lua_get([[require("agent-review")._session:file("c.lua") ~= nil]]), true)
+end
+
+T["auto refresh"]["drops files the agent reverts"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	H.write(root, "b.lua", { "local b = 1", "return b" })
+	eq(wait_for([[require("agent-review")._session:file("b.lua") == nil]]), true)
+end
+
+T["auto refresh"]["reloads the working buffer shown on the right"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	H.write(root, "a.lua", { "local M = {}", "function M.f() return 42 end", "return M" })
+	eq(wait_for([[vim.api.nvim_buf_get_lines(0, 1, 2, false)[1] == "function M.f() return 42 end"]]), true)
+	eq(state().right.diff, true)
+end
+
+T["auto refresh"]["ignores changes inside .git"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.lua("vim.wait(300)")
+	count_refreshes()
+	H.git(root, { "status" })
+	H.write(root, ".git/agent-review-test", { "x" })
+	child.lua("vim.wait(500)")
+	eq(child.lua_get("_G.refreshes"), 0)
+end
+
+T["auto refresh"]["debounces a burst of writes into a single refresh"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.lua("vim.wait(300)")
+	count_refreshes()
+	for i = 1, 5 do
+		H.write(root, "c.lua", { "-- edit " .. i })
+	end
+	eq(wait_for("_G.refreshes > 0"), true)
+	child.lua("vim.wait(500)")
+	eq(child.lua_get("_G.refreshes"), 1)
+end
+
+T["auto refresh"]["also refreshes on FocusGained"] = function()
+	setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.lua("vim.wait(300)")
+	count_refreshes()
+	child.cmd("doautocmd FocusGained")
+	eq(wait_for("_G.refreshes > 0"), true)
+end
+
+T["auto refresh"]["can be disabled"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").setup({ auto_refresh = false })]])
+	child.lua([[require("agent-review").open()]])
+	local before = child.lua_get("#vim.fn.getqflist()")
+	H.write(root, "c.lua", { "-- changed by the agent", "return 3" })
+	child.lua("vim.wait(500)")
+	eq(child.lua_get("#vim.fn.getqflist()"), before)
+end
+
+T["auto refresh"]["stops watching when the review is closed"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.lua([[require("agent-review").close()]])
+	count_refreshes()
+	H.write(root, "c.lua", { "-- changed after close" })
+	child.lua("vim.wait(500)")
+	eq(child.lua_get("_G.refreshes"), 0)
+	eq(child.lua_get("vim.v.errmsg"), "")
+end
+
 T["commands"] = MiniTest.new_set()
 
 T["commands"][":AgentReview and :AgentReviewClose work"] = function()
