@@ -282,6 +282,15 @@ function Session:sync()
 			api.nvim_win_set_buf(self.right_win, buf)
 		end
 		local left = rel and self:base_buffer(rel)
+		local pair = left and (left .. ":" .. buf) or nil
+		if pair ~= self.diff_pair then
+			-- 'diff'の窓で一度表示したバッファは隠れた後もdiff対象に残り、9個目でE96になる。
+			-- 組み合わせが変わるたびに:diffoff!で隠れバッファごと一掃してから張り直す。
+			api.nvim_win_call(self.right_win, function()
+				vim.cmd("diffoff!")
+			end)
+			self.diff_pair = pair
+		end
 		if left then
 			if api.nvim_win_get_buf(self.left_win) ~= left then
 				api.nvim_win_set_buf(self.left_win, left)

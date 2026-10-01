@@ -345,4 +345,29 @@ T["commands"][":AgentReview and :AgentReviewClose work"] = function()
 	eq(child.lua_get([[require("agent-review")._session]]), vim.NIL)
 end
 
+T["navigation"]["walking through more than 8 files never hits E96"] = function()
+	local files = {}
+	for i = 1, 12 do
+		files[("f%02d.lua"):format(i)] = { "x" }
+	end
+	local root = H.make_repo(files)
+	for i = 1, 12 do
+		H.write(root, ("f%02d.lua"):format(i), { "y" })
+	end
+	child.lua("vim.cmd.cd(...)", { root })
+	child.lua([[_G.errors = {}
+		local orig = vim.notify
+		vim.notify = function(m, l) if l == vim.log.levels.ERROR then table.insert(_G.errors, m) end end]])
+	child.lua([[require("agent-review").open()]])
+	for _ = 1, 11 do
+		child.cmd("cnext")
+	end
+	for _ = 1, 14 do
+		child.lua([[require("agent-review").prev_file()]])
+	end
+	eq(child.lua_get("_G.errors"), {})
+	eq(child.lua_get([[vim.wo[require("agent-review")._session.right_win].diff]]), true)
+	eq(child.lua_get([[vim.wo[require("agent-review")._session.left_win].diff]]), true)
+end
+
 return T

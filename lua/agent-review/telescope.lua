@@ -1,4 +1,3 @@
-local changes = require("agent-review.changes")
 local picker = require("agent-review.picker")
 
 local actions = require("telescope.actions")
@@ -13,25 +12,19 @@ local M = {}
 local diff_previewer = previewers.new_buffer_previewer({
 	title = "Diff",
 	define_preview = function(self, entry)
-		local item = entry.value
-		local lines = changes.unified(item.root, item.base_sha, item.change.file)
-		vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
-		require("telescope.previewers.utils").highlighter(self.state.bufnr, "diff")
-		if item.hunk_index then
-			local seen = 0
-			for i, l in ipairs(lines) do
-				if l:sub(1, 2) == "@@" then
-					seen = seen + 1
-					if seen == item.hunk_index then
-						pcall(vim.api.nvim_win_set_cursor, self.state.winid, { i, 0 })
-						vim.api.nvim_win_call(self.state.winid, function()
-							vim.cmd("normal! zt")
-						end)
-						break
-					end
-				end
+		require("agent-review.highlight").setup()
+		local bufnr = self.state.bufnr
+		local lnum = require("agent-review.preview").render(bufnr, entry.value)
+		local winid = self.state.winid
+		-- telescopeはdefine_previewの後のtickでバッファを窓に載せるので、それを待ってから位置を合わせる。
+		vim.schedule(function()
+			if winid and vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == bufnr then
+				pcall(vim.api.nvim_win_set_cursor, winid, { lnum, 0 })
+				vim.api.nvim_win_call(winid, function()
+					vim.cmd("normal! zz")
+				end)
 			end
-		end
+		end)
 	end,
 })
 

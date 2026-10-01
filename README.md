@@ -7,7 +7,7 @@ A side-by-side diff viewer for Neovim, built for reviewing code written by AI ag
 - **Left follows right**: when you jump to another file from the right side (`gd`, picking a reference, `<C-o>`, `:e`), the left side switches to that file at the base revision and the cursor positions stay aligned
 - VSCode-style colors: removed lines have a red background and added lines a green one, with a stronger color on the changed characters (`diffopt=inline:char,linematch:60`)
 - **Quickfix**: changed files (or every hunk) go into a quickfix list that opens at the bottom of the review tab, so `:cnext`, `]q` and trouble.nvim work as usual
-- **Telescope**: `:Telescope agent_review` lists changed files with a diff preview, and `:Telescope agent_review hunks` lists every hunk. Both work even when no review is open; picking an entry opens the review at that spot
+- **Telescope**: `:Telescope agent_review` lists changed files with a syntax-highlighted preview (the working-tree code with added lines in green and removed lines overlaid as red virtual lines), and `:Telescope agent_review hunks` lists every hunk. Both work even when no review is open; picking an entry opens the review at that spot
 - Files opened from Telescope, quickfix or `:e` while you are in the base window are moved to the working window, so the layout never breaks
 - Integrates with [claudecode.nvim](https://github.com/coder/claudecode.nvim)
   - Select lines on the base side and press `<C-l>` to send them to Claude as a file mention with a line range
