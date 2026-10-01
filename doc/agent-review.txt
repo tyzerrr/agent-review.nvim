@@ -75,12 +75,16 @@ Defaults:
   review  ]f          next_file       [f          prev_file
           ]q          qf_next         [q          qf_prev
   base    q           close           <C-l> (x)   send_to_claude
+  quickfix <CR>      qf_open
 
 "review" keys are buffer-local on both review windows; "base" keys only on
-the base window. Every value is a key, a list of keys, or `false`.
-`keymaps = false` disables all of them. An unknown action name with a value
-of the form `{ key, function(session) end, desc = "", mode = "n" }` adds a
-custom action.
+the base window; "quickfix" keys only on the quickfix window in the review
+tab, which also gets the "review" keys. Outside the review tab, or on a
+quickfix list agent-review didn't create, the keys fall back to your global
+mapping (e.g. flash.nvim on <CR>) or the built-in command. Every value is
+a key, a list of keys, or `false`. `keymaps = false` disables all of them.
+An unknown action name with a value of the form
+`{ key, function(session) end, desc = "", mode = "n" }` adds a custom action.
 
 Actions and their <Plug> mappings:
 
@@ -94,6 +98,7 @@ Actions and their <Plug> mappings:
   prev_file        <Plug>(agent-review-prev-file)
   qf_next          <Plug>(agent-review-qf-next)
   qf_prev          <Plug>(agent-review-qf-prev)
+  qf_open          <Plug>(agent-review-qf-open)
   refresh          <Plug>(agent-review-refresh)
   quickfix_files   <Plug>(agent-review-quickfix-files)
   quickfix_hunks   <Plug>(agent-review-quickfix-hunks)
@@ -119,6 +124,7 @@ Actions and their <Plug> mappings:
       review = { next_file = "]f", prev_file = "[f",
                  qf_next = "]q", qf_prev = "[q" },
       base = { close = "q", send_to_claude = "<C-l>" },
+      quickfix = { qf_open = "<CR>" },
     },
     claude = { focus_after_send = true, terminal_pattern = "claude",
                follow_terminal = true },
@@ -142,6 +148,7 @@ silently (|W12|).
 When a review opens, the changed files are put into a quickfix list titled
 "Agent Review: <base>" and its window opens at the bottom of the review tab.
 Files opened from the base window are moved to the working window.
+<CR> in that quickfix window opens the entry in the working window.
 In the review windows and the quickfix window, `]q` and `[q` wrap around at
 the ends of the list and accept a count. Refreshing keeps the current entry
 selected.

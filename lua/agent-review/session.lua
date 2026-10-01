@@ -424,17 +424,16 @@ function Session:buf_map(buf, mode, lhs, rhs, desc)
 	vim.keymap.set(mode, lhs, rhs, { buffer = buf, desc = desc, nowait = true })
 end
 
----@param side "base"|"work"
+---@param side "base"|"work"|"quickfix"
 function Session:apply_buffer_maps(buf, side)
 	for _, spec in ipairs(keymaps.buffer_specs(config.options.keymaps, side)) do
 		for _, lhs in ipairs(spec.lhs) do
 			for _, mode in ipairs(type(spec.mode) == "table" and spec.mode or { spec.mode }) do
 				self:buf_map(buf, mode, lhs, function()
-					if self:valid() and api.nvim_get_current_tabpage() == self.tab then
-						spec.fn(self)
-					else
-						-- セッション外のタブで同じバッファを開いている場合は本来のキーとして振る舞う。
-						api.nvim_feedkeys(vim.keycode(lhs), "n", false)
+					-- セッション外のタブで同じバッファを開いている場合や、操作が対象外(false)を返した場合は
+					-- 本来のキーとして振る舞う。
+					if not (self:valid() and api.nvim_get_current_tabpage() == self.tab and spec.fn(self) ~= false) then
+						keymaps.fallthrough(mode, lhs)
 					end
 				end, "Agent Review: " .. spec.desc)
 			end
@@ -449,6 +448,14 @@ function Session:map_work_buffer(buf)
 	-- 何も割り当てなくても「設定済み」として記録し、毎回のsyncで再設定しない。
 	self.saved_maps[buf] = {}
 	self:apply_buffer_maps(buf, "work")
+end
+
+function Session:map_quickfix_buffer(buf)
+	if self.saved_maps[buf] then
+		return
+	end
+	self.saved_maps[buf] = {}
+	self:apply_buffer_maps(buf, "quickfix")
 end
 
 function Session:map_base_buffer(buf)
@@ -515,7 +522,7 @@ function Session:attach_autocmds()
 				and api.nvim_get_current_tabpage() == self.tab
 			then
 				-- 一覧を見ながら]q/[qを押すことが多いので、quickfix窓でもレビューのキーを使えるようにする。
-				self:map_work_buffer(cur_buf)
+				self:map_quickfix_buffer(cur_buf)
 				return
 			end
 			if self:valid() and api.nvim_get_current_win() == self.left_win then

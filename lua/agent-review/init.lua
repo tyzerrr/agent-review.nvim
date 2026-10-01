@@ -186,6 +186,20 @@ function M.qf_prev()
 	M.qf_step(-1)
 end
 
+---レビューのquickfixでカーソル行の項目を右窓に開く。
+---@return false|nil 対象外（別のリスト・locationリスト）ならfalseを返し、本来のキーに任せる
+function M.qf_open()
+	local s = active()
+	local info = vim.fn.getwininfo(api.nvim_get_current_win())[1]
+	if not (s and info.quickfix == 1 and info.loclist == 0 and vim.fn.getqflist({ id = 0 }).id == s.qf_id) then
+		return false
+	end
+	local idx = vim.fn.line(".")
+	-- 直前の窓がnofile（削除ファイル）だと:ccが窓を分割してしまうため、右窓で開く。
+	api.nvim_set_current_win(s.right_win)
+	vim.cmd.cc(idx)
+end
+
 function M.files()
 	require("agent-review.picker").pick()
 end

@@ -60,6 +60,11 @@ M.defaults = {
 			close = "q",
 			send_to_claude = "<C-l>",
 		},
+		-- レビュータブのquickfix窓だけに設定されるキー（reviewのキーもここで使える）。
+		-- agent-reviewのリスト以外では、グローバルの割り当てや標準の動きに任せる。
+		quickfix = {
+			qf_open = "<CR>",
+		},
 	},
 	claude = {
 		-- 送信後にClaudeのターミナルへフォーカスしてInsertモードに入る。

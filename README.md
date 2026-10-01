@@ -113,9 +113,11 @@ The base revision is resolved to a commit when the review opens, so if the agent
 | review (both sides + quickfix) | `]q` / `[q` | Next / previous quickfix entry, wrapping around at the ends |
 | base side | `q` | Close the review |
 | base side, visual | `<C-l>` | Send the selection to Claude Code |
+| quickfix window | `<CR>` | Open the entry under the cursor in the review (even if another plugin maps `<CR>` globally) |
 
 Built-in diff motions also work: `]c` / `[c` (next / previous hunk).
 On the working side, your normal mappings stay in place. Buffer-local mappings that the review replaces are restored when it closes.
+Outside the review tab, or on a quickfix list that agent-review didn't create, these keys do what they would do without agent-review: your global mapping if you have one (for example flash.nvim on `<CR>`), otherwise the built-in command.
 
 ### Customizing
 
@@ -149,6 +151,9 @@ require("agent-review").setup({
       close = { "q", "<Esc>" },
       send_to_claude = "<C-l>",
     },
+    quickfix = {
+      qf_open = { "<CR>", "o" },
+    },
   },
 })
 ```
@@ -176,6 +181,7 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `prev_file` | `<Plug>(agent-review-prev-file)` | Previous changed file |
 | `qf_next` | `<Plug>(agent-review-qf-next)` | Next quickfix entry; after the last one, go back to the first |
 | `qf_prev` | `<Plug>(agent-review-qf-prev)` | Previous quickfix entry; before the first one, go to the last |
+| `qf_open` | `<Plug>(agent-review-qf-open)` | Open the review quickfix entry under the cursor in the working window |
 | `refresh` | `<Plug>(agent-review-refresh)` | Reload the changed files and the diff |
 | `quickfix_files` | `<Plug>(agent-review-quickfix-files)` | Quickfix: one entry per file |
 | `quickfix_hunks` | `<Plug>(agent-review-quickfix-hunks)` | Quickfix: one entry per hunk |
@@ -224,6 +230,7 @@ internal/service/user.go|3 col 1| modified  +16 -3
 
 - Each entry points at the first changed line.
 - `:AgentReviewQuickfix hunks` switches to one entry per hunk, so `]q` walks every change in the review.
+- `<CR>` in the quickfix window opens the entry in the working window, even when another plugin (such as flash.nvim) maps `<CR>` globally. On other quickfix lists your own `<CR>` still runs.
 - In the review windows and the quickfix window, `]q` / `[q` wrap around: after the last entry comes the first one, and before the first comes the last. A count works too (`3]q`).
 - Refreshing updates the same list instead of stacking new ones, and keeps the entry you are on selected.
 - Files opened from quickfix, Telescope or `:e` while the base window has focus are moved to the working window automatically, so the layout never breaks.
@@ -277,6 +284,7 @@ require("agent-review").setup({
     global = { toggle = "<leader>dr", open_rev = "<leader>dR", files = "<leader>dl", hunks = "<leader>dh" },
     review = { next_file = "]f", prev_file = "[f", qf_next = "]q", qf_prev = "[q" },
     base = { close = "q", send_to_claude = "<C-l>" },
+    quickfix = { qf_open = "<CR>" }, -- only in the review tab's quickfix window
   },
   claude = {
     focus_after_send = true,     -- jump into the Claude terminal after <C-l>

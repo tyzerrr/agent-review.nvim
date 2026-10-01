@@ -206,6 +206,108 @@ T["quickfix"]["the quickfix window gets its normal ]q back after close"] = funct
 	eq(qf_buf_maps_bracket_q(), false)
 end
 
+-- flash.nvim等がグローバルに<CR>を奪っている環境を再現する。
+local function global_cr_map()
+	child.lua([[_G.global_cr = 0; vim.keymap.set("n", "<CR>", function() _G.global_cr = _G.global_cr + 1 end)]])
+end
+
+local function focus_qf(line)
+	child.lua(
+		[[vim.api.nvim_set_current_win(vim.fn.getqflist({ winid = 0 }).winid)
+		vim.api.nvim_win_set_cursor(0, { ..., 0 })]],
+		{ line }
+	)
+end
+
+local function tab_win_count()
+	return child.lua_get("#vim.api.nvim_tabpage_list_wins(0)")
+end
+
+T["quickfix"]["<CR> in the review quickfix opens the entry even when <CR> is mapped globally"] = function()
+	local root = setup_repo()
+	global_cr_map()
+	child.lua([[require("agent-review").open()]])
+	focus_qf(2)
+	child.type_keys("<CR>")
+	child.lua("vim.wait(50)")
+	eq(child.lua_get("_G.global_cr"), 0)
+	eq(right_name(), root .. "/b.lua")
+	eq(left_lines(), { "b1", "b2" })
+	eq(child.lua_get([[vim.api.nvim_get_current_win() == require("agent-review")._session.right_win]]), true)
+	eq(child.lua_get([[vim.api.nvim_win_get_cursor(0)[1] ]]), 3)
+end
+
+T["quickfix"]["<CR> on a deleted file opens it in the right window without splitting"] = function()
+	setup_repo()
+	child.lua([[require("agent-review").open()]])
+	local wins = tab_win_count()
+	focus_qf(3)
+	child.type_keys("<CR>")
+	child.lua("vim.wait(50)")
+	eq(tab_win_count(), wins)
+	eq(right_name(), "agent-review://deleted/d.lua")
+	eq(left_lines(), { "gone" })
+end
+
+T["quickfix"]["<CR> on another quickfix list is left to the global mapping"] = function()
+	local root = setup_repo()
+	global_cr_map()
+	child.lua([[require("agent-review").open()]])
+	child.lua([[vim.fn.setqflist({}, " ", { title = "grep", items = { { filename = ..., lnum = 1 } } })]], { root .. "/c.lua" })
+	focus_qf(1)
+	child.type_keys("<CR>")
+	eq(child.lua_get("_G.global_cr"), 1)
+end
+
+T["quickfix"]["<CR> in a quickfix window of another tab is left to the global mapping"] = function()
+	setup_repo()
+	global_cr_map()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("tabprevious")
+	child.cmd("copen")
+	child.type_keys("<CR>")
+	eq(child.lua_get("_G.global_cr"), 1)
+end
+
+T["quickfix"]["<CR> can be remapped or disabled"] = function()
+	local root = setup_repo()
+	global_cr_map()
+	child.lua([[require("agent-review").setup({ keymaps = { quickfix = { qf_open = "o" } } })]])
+	child.lua([[require("agent-review").open()]])
+	focus_qf(2)
+	child.type_keys("<CR>")
+	eq(child.lua_get("_G.global_cr"), 1)
+	focus_qf(2)
+	child.type_keys("o")
+	child.lua("vim.wait(50)")
+	eq(right_name(), root .. "/b.lua")
+end
+
+T["quickfix"]["the quickfix window loses <CR> after close"] = function()
+	setup_repo()
+	child.lua([[require("agent-review").open()]])
+	local qf_buf = child.lua_get([[vim.api.nvim_win_get_buf(vim.fn.getqflist({ winid = 0 }).winid)]])
+	local function has_cr()
+		return child.lua_get(
+			[[vim.api.nvim_buf_is_valid(...) and #vim.tbl_filter(function(m) return m.lhs == "<CR>" end, vim.api.nvim_buf_get_keymap(..., "n")) > 0]],
+			{ qf_buf }
+		)
+	end
+	eq(has_cr(), true)
+	child.lua([[require("agent-review").close()]])
+	eq(has_cr(), false)
+end
+
+T["quickfix"]["]f outside the review tab falls back to the global mapping"] = function()
+	local root = setup_repo()
+	child.lua([[_G.global_f = 0; vim.keymap.set("n", "]f", function() _G.global_f = _G.global_f + 1 end)]])
+	child.lua([[require("agent-review").open()]])
+	child.cmd("tabprevious")
+	child.cmd("edit " .. root .. "/a.lua")
+	child.type_keys("]f")
+	eq(child.lua_get("_G.global_f"), 1)
+end
+
 T["quickfix"]["]q with an empty list warns instead of erroring"] = function()
 	setup_repo()
 	child.lua([[require("agent-review").open()]])

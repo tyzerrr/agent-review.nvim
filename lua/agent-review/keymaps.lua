@@ -80,6 +80,13 @@ M.actions = {
 		end,
 		plug = "qf-prev",
 	},
+	qf_open = {
+		desc = "Open the quickfix entry under the cursor in the review",
+		fn = function()
+			return ar().qf_open()
+		end,
+		plug = "qf-open",
+	},
 	refresh = {
 		desc = "Refresh review",
 		fn = function()
@@ -225,15 +232,32 @@ function M.define_plugs()
 	end
 end
 
+---バッファローカルの割り当てが無かった場合と同じ動きをする。
+---グローバルの割り当て（flash.nvimの<CR>等）があればそれを、無ければ標準の動きを実行する。
+function M.fallthrough(mode, lhs)
+	local key = vim.keycode(lhs)
+	for _, m in ipairs(api.nvim_get_keymap(mode)) do
+		if vim.keycode(m.lhs) == key then
+			if m.callback and m.expr ~= 1 then
+				return m.callback()
+			end
+			local rhs = m.callback and m.callback() or (m.expr == 1 and api.nvim_eval(m.rhs) or m.rhs)
+			api.nvim_feedkeys(vim.keycode(rhs or ""), m.noremap == 1 and "n" or "m", false)
+			return
+		end
+	end
+	api.nvim_feedkeys(key, "n", false)
+end
+
 ---レビュータブ内のバッファへ設定するキーの一覧。
----@param side "base"|"work"
+---@param side "base"|"work"|"quickfix"
 ---@return { mode: string|string[], lhs: string[], fn: function, desc: string }[]
 function M.buffer_specs(km, side)
 	if not km then
 		return {}
 	end
 	local specs = {}
-	local sections = side == "base" and { "review", "base" } or { "review" }
+	local sections = side == "work" and { "review" } or { "review", side }
 	for _, section in ipairs(sections) do
 		for name, value in pairs(km[section] or {}) do
 			local spec = M.resolve(name, value)
