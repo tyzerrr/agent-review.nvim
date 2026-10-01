@@ -508,6 +508,16 @@ function Session:attach_autocmds()
 		group = group,
 		nested = true,
 		callback = function()
+			local cur_buf = api.nvim_get_current_buf()
+			if
+				vim.bo[cur_buf].buftype == "quickfix"
+				and self:valid()
+				and api.nvim_get_current_tabpage() == self.tab
+			then
+				-- 一覧を見ながら]q/[qを押すことが多いので、quickfix窓でもレビューのキーを使えるようにする。
+				self:map_work_buffer(cur_buf)
+				return
+			end
 			if self:valid() and api.nvim_get_current_win() == self.left_win then
 				if vim.b[api.nvim_win_get_buf(self.left_win)].agent_review_side ~= "base" and not self.syncing then
 					-- 開いた側がカーソル位置を設定し終わってから移す。

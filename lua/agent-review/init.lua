@@ -170,6 +170,11 @@ function M.qf_step(delta)
 	if info.size == 0 then
 		return notify("quickfix list is empty", vim.log.levels.WARN)
 	end
+	local s = active()
+	if s and api.nvim_get_current_tabpage() == s.tab then
+		-- quickfix窓からの:ccは直前の窓に開くが、それがnofile（削除ファイル）だと新しい窓を分割してしまう。
+		api.nvim_set_current_win(s.right_win)
+	end
 	vim.cmd.cc((info.idx - 1 + delta * vim.v.count1) % info.size + 1)
 end
 

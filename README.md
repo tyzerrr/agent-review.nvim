@@ -110,7 +110,7 @@ The base revision is resolved to a commit when the review opens, so if the agent
 | global | `<leader>dl` | Changed files picker |
 | global | `<leader>dh` | Changed hunks picker |
 | review (both sides) | `]f` / `[f` | Next / previous changed file |
-| review (both sides) | `]q` / `[q` | Next / previous quickfix entry, wrapping around at the ends |
+| review (both sides + quickfix) | `]q` / `[q` | Next / previous quickfix entry, wrapping around at the ends |
 | base side | `q` | Close the review |
 | base side, visual | `<C-l>` | Send the selection to Claude Code |
 
@@ -224,7 +224,7 @@ internal/service/user.go|3 col 1| modified  +16 -3
 
 - Each entry points at the first changed line.
 - `:AgentReviewQuickfix hunks` switches to one entry per hunk, so `]q` walks every change in the review.
-- In the review windows `]q` / `[q` wrap around: after the last entry comes the first one, and before the first comes the last. A count works too (`3]q`).
+- In the review windows and the quickfix window, `]q` / `[q` wrap around: after the last entry comes the first one, and before the first comes the last. A count works too (`3]q`).
 - Refreshing updates the same list instead of stacking new ones, and keeps the entry you are on selected.
 - Files opened from quickfix, Telescope or `:e` while the base window has focus are moved to the working window automatically, so the layout never breaks.
 

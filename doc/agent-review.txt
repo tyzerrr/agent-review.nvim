@@ -142,8 +142,9 @@ silently (|W12|).
 When a review opens, the changed files are put into a quickfix list titled
 "Agent Review: <base>" and its window opens at the bottom of the review tab.
 Files opened from the base window are moved to the working window.
-In the review windows `]q` and `[q` wrap around at the ends of the list and
-accept a count. Refreshing keeps the current entry selected.
+In the review windows and the quickfix window, `]q` and `[q` wrap around at
+the ends of the list and accept a count. Refreshing keeps the current entry
+selected.
 
 Telescope extension:
 >vim

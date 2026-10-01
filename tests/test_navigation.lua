@@ -173,6 +173,39 @@ T["quickfix"]["]q from the base window opens the entry on the right"] = function
 	eq(child.lua_get([[vim.api.nvim_get_current_win() == require("agent-review")._session.right_win]]), true)
 end
 
+T["quickfix"]["]q and [q wrap around from inside the quickfix window"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("clast")
+	child.lua("vim.wait(50)")
+	child.lua([[vim.api.nvim_set_current_win(vim.fn.getqflist({ winid = 0 }).winid)]])
+	child.type_keys("]q")
+	child.lua("vim.wait(50)")
+	eq(child.lua_get("vim.v.errmsg"), "")
+	eq(child.lua_get([[vim.fn.getqflist({ idx = 0 }).idx]]), 1)
+	eq(right_name(), root .. "/a.lua")
+	child.lua([[vim.api.nvim_set_current_win(vim.fn.getqflist({ winid = 0 }).winid)]])
+	child.type_keys("[q")
+	child.lua("vim.wait(50)")
+	eq(child.lua_get([[vim.fn.getqflist({ idx = 0 }).idx]]), 3)
+	eq(right_name(), "agent-review://deleted/d.lua")
+end
+
+T["quickfix"]["the quickfix window gets its normal ]q back after close"] = function()
+	setup_repo()
+	child.lua([[require("agent-review").open()]])
+	local qf_buf = child.lua_get([[vim.api.nvim_win_get_buf(vim.fn.getqflist({ winid = 0 }).winid)]])
+	local function qf_buf_maps_bracket_q()
+		return child.lua_get(
+			[[vim.api.nvim_buf_is_valid(...) and #vim.tbl_filter(function(m) return m.lhs == "]q" end, vim.api.nvim_buf_get_keymap(..., "n")) > 0]],
+			{ qf_buf }
+		)
+	end
+	eq(qf_buf_maps_bracket_q(), true)
+	child.lua([[require("agent-review").close()]])
+	eq(qf_buf_maps_bracket_q(), false)
+end
+
 T["quickfix"]["]q with an empty list warns instead of erroring"] = function()
 	setup_repo()
 	child.lua([[require("agent-review").open()]])
