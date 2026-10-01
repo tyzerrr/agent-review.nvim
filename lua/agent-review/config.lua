@@ -30,13 +30,28 @@ M.defaults = {
 		-- "files": 1ファイル1行 / "hunks": 変更箇所ごとに1行
 		mode = "files",
 	},
+	-- 値は "キー" | { "キー", ... } | false（無効）。keymaps = false で全て無効。
+	-- 操作名の一覧は lua/agent-review/keymaps.lua の actions を参照。
+	-- 未知の名前に { "キー", function(session) end, desc = "", mode = "n" } を渡すと独自の操作を追加できる。
 	keymaps = {
-		next_file = "]f",
-		prev_file = "[f",
-		files = "<leader>dl",
-		hunks = "<leader>dh",
-		close = "q", -- base側のウィンドウでのみ有効（作業ツリー側はマクロ記録と衝突するため）
-		send_to_claude = "<C-l>", -- base側のビジュアル選択をClaude Codeに送る
+		-- どこからでも使えるキー（setup()を呼んだ時に設定される）
+		global = {
+			toggle = "<leader>dr",
+			open_rev = "<leader>dR",
+			files = "<leader>dl",
+			hunks = "<leader>dh",
+		},
+		-- レビュータブ内の左右両方のバッファに設定されるキー
+		review = {
+			next_file = "]f",
+			prev_file = "[f",
+		},
+		-- base側（左）のバッファだけに設定されるキー。
+		-- 作業ツリー側にqを置かないのはマクロ記録と衝突するため。
+		base = {
+			close = "q",
+			send_to_claude = "<C-l>",
+		},
 	},
 	claude = {
 		-- 送信後にClaudeのターミナルへフォーカスしてInsertモードに入る。
@@ -53,7 +68,16 @@ M.defaults = {
 M.options = vim.deepcopy(M.defaults)
 
 function M.setup(opts)
-	M.options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts or {})
+	opts = opts or {}
+	local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts)
+	if opts.keymaps == false then
+		merged.keymaps = false
+	elseif type(opts.keymaps) == "table" then
+		-- 旧形式（keymaps.next_file 等）を先に正規化してからデフォルトと合わせる。
+		local user = require("agent-review.keymaps").normalize(opts.keymaps)
+		merged.keymaps = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.keymaps), user)
+	end
+	M.options = merged
 	return M.options
 end
 

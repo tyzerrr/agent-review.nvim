@@ -111,7 +111,8 @@ function M.qf_items(root, list, mode, resolve_bufnr)
 		local entry = { filename = root .. "/" .. c.file.path }
 		local bufnr = resolve_bufnr and resolve_bufnr(c.file)
 		if bufnr then
-			entry = { bufnr = bufnr }
+			-- moduleを指定すると、quickfix上は内部のバッファ名の代わりにこのパスが表示される。
+			entry = { bufnr = bufnr, module = c.file.path }
 		end
 		if mode == "hunks" and #c.hunks > 0 then
 			for _, h in ipairs(c.hunks) do

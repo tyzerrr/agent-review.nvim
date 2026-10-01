@@ -2,6 +2,7 @@ local changes = require("agent-review.changes")
 local config = require("agent-review.config")
 local git = require("agent-review.git")
 local highlight = require("agent-review.highlight")
+local keymaps = require("agent-review.keymaps")
 
 local api = vim.api
 
@@ -405,63 +406,36 @@ function Session:buf_map(buf, mode, lhs, rhs, desc)
 	vim.keymap.set(mode, lhs, rhs, { buffer = buf, desc = desc, nowait = true })
 end
 
-function Session:nav_maps(buf)
-	local km = config.options.keymaps
-	local function in_session(fn, lhs)
-		return function()
-			if self:valid() and api.nvim_get_current_tabpage() == self.tab then
-				fn()
-			else
-				-- セッション外のタブで同じバッファを開いている場合は本来のキーとして振る舞う。
-				api.nvim_feedkeys(vim.keycode(lhs), "n", false)
+---@param side "base"|"work"
+function Session:apply_buffer_maps(buf, side)
+	for _, spec in ipairs(keymaps.buffer_specs(config.options.keymaps, side)) do
+		for _, lhs in ipairs(spec.lhs) do
+			for _, mode in ipairs(type(spec.mode) == "table" and spec.mode or { spec.mode }) do
+				self:buf_map(buf, mode, lhs, function()
+					if self:valid() and api.nvim_get_current_tabpage() == self.tab then
+						spec.fn(self)
+					else
+						-- セッション外のタブで同じバッファを開いている場合は本来のキーとして振る舞う。
+						api.nvim_feedkeys(vim.keycode(lhs), "n", false)
+					end
+				end, "Agent Review: " .. spec.desc)
 			end
 		end
 	end
-	self:buf_map(
-		buf,
-		"n",
-		km.next_file,
-		in_session(function()
-			self:step(1)
-		end, km.next_file),
-		"Agent Review: next file"
-	)
-	self:buf_map(
-		buf,
-		"n",
-		km.prev_file,
-		in_session(function()
-			self:step(-1)
-		end, km.prev_file),
-		"Agent Review: previous file"
-	)
-	self:buf_map(
-		buf,
-		"n",
-		km.files,
-		in_session(function()
-			self:pick()
-		end, km.files),
-		"Agent Review: changed files"
-	)
 end
 
 function Session:map_work_buffer(buf)
 	if self.saved_maps[buf] then
 		return
 	end
-	self:nav_maps(buf)
+	-- 何も割り当てなくても「設定済み」として記録し、毎回のsyncで再設定しない。
+	self.saved_maps[buf] = {}
+	self:apply_buffer_maps(buf, "work")
 end
 
 function Session:map_base_buffer(buf)
-	local km = config.options.keymaps
-	self:nav_maps(buf)
-	self:buf_map(buf, "n", km.close, function()
-		require("agent-review").close()
-	end, "Agent Review: close")
-	self:buf_map(buf, "x", km.send_to_claude, function()
-		require("agent-review.claude").send_visual(self)
-	end, "Agent Review: send base selection to Claude")
+	self.saved_maps[buf] = self.saved_maps[buf] or {}
+	self:apply_buffer_maps(buf, "base")
 end
 
 function Session:open(initial_rel)

@@ -16,13 +16,16 @@ local function render(path)
 		local picker = require("agent-review.picker")
 		local item = vim.tbl_filter(function(i) return i.path == path end, picker.items())[1]
 		local buf = vim.api.nvim_create_buf(false, true)
-		local first = require("agent-review.preview").render(buf, item)
+		local first, topfill = require("agent-review.preview").render(buf, item)
 		local ns = vim.api.nvim_get_namespaces()["agent-review-preview"]
 		local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
-		local added, removed = {}, {}
+		local added, removed, deleted_lines = {}, {}, {}
 		for _, m in ipairs(marks) do
 			if m[4].line_hl_group == "AgentReviewAdd" then
 				table.insert(added, m[2] + 1)
+			end
+			if m[4].line_hl_group == "AgentReviewDelete" then
+				table.insert(deleted_lines, m[2] + 1)
 			end
 			for _, vl in ipairs(m[4].virt_lines or {}) do
 				local text = ""
@@ -36,7 +39,9 @@ local function render(path)
 			lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false),
 			added = added,
 			removed = removed,
+			deleted_lines = deleted_lines,
 			first = first,
+			topfill = topfill,
 			ts = vim.treesitter.highlighter.active[buf] ~= nil,
 			syntax_chunk = (function()
 				for _, m in ipairs(marks) do
@@ -84,14 +89,26 @@ T["render() shows pure deletions below the preceding line"] = function()
 	eq(r.removed[1].above, false)
 end
 
-T["render() handles deleted files as all-removed"] = function()
-	local root = H.make_repo({ ["gone.lua"] = { "x", "y" }, ["keep.lua"] = { "k" } })
+T["render() shows deleted files as real red lines so they are visible"] = function()
+	local root = H.make_repo({ ["gone.lua"] = { "local x = 1", "return x" }, ["keep.lua"] = { "k" } })
 	vim.fn.delete(root .. "/gone.lua")
 	child.lua("vim.cmd.cd(...)", { root })
 	local r = render("gone.lua")
-	eq(r.lines, { "" })
-	eq(#r.removed, 2)
+	eq(r.lines, { "local x = 1", "return x" })
+	eq(r.deleted_lines, { 1, 2 })
+	eq(r.removed, {})
+	eq(r.ts, true)
+end
+
+T["render() asks to reveal deletions above the first line"] = function()
+	local root = H.make_repo({ ["a.lua"] = { "one", "two", "three" } })
+	H.write(root, "a.lua", { "three" })
+	child.lua("vim.cmd.cd(...)", { root })
+	local r = render("a.lua")
 	eq(r.removed[1].above, true)
+	eq(r.removed[1].row, 1)
+	eq(r.first, 1)
+	eq(r.topfill, 2)
 end
 
 T["render() handles new files as all-added"] = function()

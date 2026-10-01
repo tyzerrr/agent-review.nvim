@@ -73,11 +73,27 @@ end
 ---@param buf integer
 ---@param item AgentReviewPickerItem
 ---@return integer lnum カーソルを置くべき行（1-indexed）
+---@return integer topfill 1行目より上の仮想行を見せるために必要な埋め行数
 function M.render(buf, item)
 	local c = item.change
+	api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+
+	if c.file.status == "D" then
+		-- 仮想行だけだと1行目より上に置かれて見えないので、削除ファイルは実際の行として赤く表示する。
+		local base = #c.base > 0 and c.base or { "" }
+		api.nvim_buf_set_lines(buf, 0, -1, false, base)
+		local ft, lang = lang_for(c.file.path, c.base)
+		if not (lang and pcall(vim.treesitter.start, buf, lang)) and ft then
+			vim.bo[buf].syntax = ft
+		end
+		for i = 1, #c.base do
+			api.nvim_buf_set_extmark(buf, ns, i - 1, 0, { line_hl_group = "AgentReviewDelete", priority = 10 })
+		end
+		return 1, 0
+	end
+
 	local work = #c.work > 0 and c.work or { "" }
 	api.nvim_buf_set_lines(buf, 0, -1, false, work)
-	api.nvim_buf_clear_namespace(buf, ns, 0, -1)
 
 	local ft, lang = lang_for(c.file.path, #c.work > 0 and c.work or c.base)
 	if not (lang and pcall(vim.treesitter.start, buf, lang)) and ft then
@@ -93,6 +109,7 @@ function M.render(buf, item)
 	local base_lang = select(2, lang_for(c.file.old_path or c.file.path, c.base))
 	local cols = capture_map(c.base, base_lang, needed)
 
+	local topfill = 0
 	for _, h in ipairs(c.hunks) do
 		for l = h.work_start, h.work_start + h.work_count - 1 do
 			api.nvim_buf_set_extmark(buf, ns, l - 1, 0, { line_hl_group = "AgentReviewAdd", priority = 10 })
@@ -109,11 +126,14 @@ function M.render(buf, item)
 				row, above = h.work_start - 1, false
 			end
 			api.nvim_buf_set_extmark(buf, ns, row, 0, { virt_lines = virt, virt_lines_above = above })
+			if row == 0 and above then
+				topfill = #virt
+			end
 		end
 	end
 
 	local target = item.hunk_index and c.hunks[item.hunk_index] or c.hunks[1]
-	return target and math.max(target.work_start, 1) or 1
+	return target and math.max(target.work_start, 1) or 1, topfill
 end
 
 return M

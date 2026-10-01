@@ -1,0 +1,181 @@
+*agent-review.txt*  Review AI agent changes in a side-by-side diff with LSP
+
+==============================================================================
+CONTENTS                                               *agent-review-contents*
+
+  1. Introduction ................................ |agent-review-intro|
+  2. Setup ....................................... |agent-review-setup|
+  3. Commands .................................... |agent-review-commands|
+  4. Keymaps ..................................... |agent-review-keymaps|
+  5. Configuration ............................... |agent-review-config|
+  6. Pickers and quickfix ........................ |agent-review-pickers|
+  7. Claude Code ................................. |agent-review-claude|
+  8. Lua API and events .......................... |agent-review-api|
+  9. Highlights .................................. |agent-review-highlights|
+
+==============================================================================
+1. INTRODUCTION                                           *agent-review-intro*
+
+agent-review.nvim opens a review tab with two windows:
+
+  left   the file at a base revision (default HEAD), read-only, in a
+         `nofile` scratch buffer, so no LSP client attaches
+  right  the real working-tree buffer, where LSP, edits and saves work
+
+When the right window shows another file (|gd|, |CTRL-O|, |:edit|,
+|:cnext|, a Telescope pick, ...), the left window switches to that file at
+the base revision and both are diffed again. Files outside the repository
+and gitignored files turn the diff off; new files get an empty base.
+
+Requires Neovim 0.12+ and git.
+
+==============================================================================
+2. SETUP                                                  *agent-review-setup*
+
+>lua
+  require("agent-review").setup({})
+<
+Commands and |<Plug>| mappings work without setup(). The global keymaps
+are created by setup().
+
+==============================================================================
+3. COMMANDS                                            *agent-review-commands*
+
+:AgentReview [rev]                                              *:AgentReview*
+    Open a review of the working tree against [rev] (default: config.base).
+    The revision is resolved to a commit when the review opens.
+
+:AgentReviewToggle [rev]                                  *:AgentReviewToggle*
+    Toggle the review.
+
+:AgentReviewClose                                          *:AgentReviewClose*
+    Close the review tab.
+
+:AgentReviewFiles                                          *:AgentReviewFiles*
+    Pick a changed file (Telescope if available, otherwise |vim.ui.select()|).
+
+:AgentReviewHunks                                          *:AgentReviewHunks*
+    Pick a changed hunk.
+
+:AgentReviewQuickfix [files|hunks]                      *:AgentReviewQuickfix*
+    Rebuild the quickfix list with one entry per file or per hunk, and open
+    it.
+
+:AgentReviewRefresh                                      *:AgentReviewRefresh*
+    Reload the changed files and buffers.
+
+==============================================================================
+4. KEYMAPS                                              *agent-review-keymaps*
+
+Defaults:
+
+  global  <leader>dr  toggle          <leader>dR  open_rev
+          <leader>dl  files           <leader>dh  hunks
+  review  ]f          next_file       [f          prev_file
+  base    q           close           <C-l> (x)   send_to_claude
+
+"review" keys are buffer-local on both review windows; "base" keys only on
+the base window. Every value is a key, a list of keys, or `false`.
+`keymaps = false` disables all of them. An unknown action name with a value
+of the form `{ key, function(session) end, desc = "", mode = "n" }` adds a
+custom action.
+
+Actions and their <Plug> mappings:
+
+  toggle           <Plug>(agent-review-toggle)
+  open             <Plug>(agent-review-open)
+  open_rev         (types ":AgentReview " on the command line)
+  close            <Plug>(agent-review-close)
+  files            <Plug>(agent-review-files)
+  hunks            <Plug>(agent-review-hunks)
+  next_file        <Plug>(agent-review-next-file)
+  prev_file        <Plug>(agent-review-prev-file)
+  refresh          <Plug>(agent-review-refresh)
+  quickfix_files   <Plug>(agent-review-quickfix-files)
+  quickfix_hunks   <Plug>(agent-review-quickfix-hunks)
+  send_to_claude   <Plug>(agent-review-send-to-claude)    (visual)
+
+==============================================================================
+5. CONFIGURATION                                         *agent-review-config*
+
+>lua
+  require("agent-review").setup({
+    base = "HEAD",
+    diffopt = { "internal", "filler", "closeoff", "inline:char",
+                "linematch:60", "algorithm:histogram", "indent-heuristic" },
+    fold_unchanged = false,
+    fillchar = "╱",
+    winbar = true,
+    picker = "auto",            -- "auto" | "telescope" | "ui_select"
+    quickfix = { auto = true, open = true, height = 8, mode = "files" },
+    keymaps = {
+      global = { toggle = "<leader>dr", open_rev = "<leader>dR",
+                 files = "<leader>dl", hunks = "<leader>dh" },
+      review = { next_file = "]f", prev_file = "[f" },
+      base = { close = "q", send_to_claude = "<C-l>" },
+    },
+    claude = { focus_after_send = true, terminal_pattern = "claude",
+               follow_terminal = true },
+    highlights = {},
+  })
+<
+'diffopt' is applied only while a review is open and restored afterwards.
+
+==============================================================================
+6. PICKERS AND QUICKFIX                                 *agent-review-pickers*
+
+When a review opens, the changed files are put into a quickfix list titled
+"Agent Review: <base>" and its window opens at the bottom of the review tab.
+Files opened from the base window are moved to the working window.
+
+Telescope extension:
+>vim
+  :Telescope agent_review          " changed files
+  :Telescope agent_review hunks    " every hunk
+<
+The preview shows the working-tree code with tree-sitter highlighting,
+added lines in green and removed lines as red virtual lines.
+
+==============================================================================
+7. CLAUDE CODE                                           *agent-review-claude*
+
+With claudecode.nvim, select lines in the base window and press <C-l>. The
+base file is written to `.git/agent-review/base-<sha>/<path>` and sent as a
+file mention with the line range. A visible Claude terminal is moved into the
+review tab and restored to its original tab on close. Opening, closing or
+resizing it re-balances the diff windows.
+
+==============================================================================
+8. LUA API AND EVENTS                                       *agent-review-api*
+
+>lua
+  local ar = require("agent-review")
+  ar.setup(opts)
+  ar.open(base, { path = "src/x.lua" })
+  ar.open_at("src/x.lua", 42)
+  ar.close()
+  ar.toggle(base)
+  ar.next_file()  ar.prev_file()
+  ar.files()      ar.hunks()
+  ar.quickfix("files" | "hunks")
+  ar.refresh()
+<
+                                    *AgentReviewOpen* *AgentReviewClose*
+|User| autocommands fire when a review opens or closes, with `data` set to
+`{ root, base, base_sha, tab, left_win, right_win }`.
+
+==============================================================================
+9. HIGHLIGHTS                                        *agent-review-highlights*
+
+  AgentReviewAdd          added/changed lines (working side)
+  AgentReviewAddText      changed characters (working side)
+  AgentReviewDelete       removed/changed lines (base side)
+  AgentReviewDeleteText   changed characters (base side)
+  AgentReviewFiller       filler opposite one-sided lines
+  AgentReviewWinbarBase   "BASE" label
+  AgentReviewWinbarWork   "WORKING" label
+
+By default they are derived from the |hl-Normal| background. Override them
+with `highlights = { AgentReviewAdd = { bg = "#1f3a28" } }`.
+
+ vim:tw=78:ts=8:ft=help:norl:

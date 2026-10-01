@@ -16,6 +16,22 @@ end
 function M.setup(opts)
 	config.setup(opts)
 	highlight.setup()
+	require("agent-review.keymaps").apply_global(config.options.keymaps)
+end
+
+local function emit(event, s)
+	api.nvim_exec_autocmds("User", {
+		pattern = event,
+		modeline = false,
+		data = {
+			root = s.root,
+			base = s.base,
+			base_sha = s.base_sha,
+			tab = s.tab,
+			left_win = s.left_win,
+			right_win = s.right_win,
+		},
+	})
 end
 
 local function active()
@@ -92,6 +108,7 @@ function M.open(base, opts)
 	end
 	M._session = s
 	s:open(initial)
+	emit("AgentReviewOpen", s)
 end
 
 ---レビューを（必要なら開いて）指定ファイル・行へ移動する。ピッカーからの遷移先。
@@ -114,8 +131,9 @@ end
 function M.close()
 	local s = M._session
 	M._session = nil
-	if s then
+	if s and not s.closed then
 		s:close()
+		emit("AgentReviewClose", s)
 	end
 end
 

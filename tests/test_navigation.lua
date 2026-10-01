@@ -57,6 +57,8 @@ T["quickfix"]["is populated with changed files and opened in the review tab"] = 
 	eq(child.lua_get([[vim.api.nvim_get_current_win() == require("agent-review")._session.right_win]]), true)
 	-- 削除ファイルは実ファイルのバッファを作らず、編集できないnofileバッファを指す
 	eq(child.lua_get([[vim.bo[vim.fn.getqflist()[3].bufnr].buftype]]), "nofile")
+	-- 表示上は内部のバッファ名ではなく通常のパスを見せる
+	eq(child.lua_get([[vim.fn.getqflist()[3].module]]), "d.lua")
 end
 
 T["quickfix"]["selecting an entry opens it in the right window and the base follows"] = function()

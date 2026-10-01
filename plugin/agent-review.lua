@@ -48,3 +48,5 @@ end, {
 cmd("AgentReviewRefresh", function()
 	require("agent-review").refresh()
 end, { desc = "Reload changed files and diff" })
+
+require("agent-review.keymaps").define_plugs()

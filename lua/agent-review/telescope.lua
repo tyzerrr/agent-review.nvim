@@ -14,14 +14,19 @@ local diff_previewer = previewers.new_buffer_previewer({
 	define_preview = function(self, entry)
 		require("agent-review.highlight").setup()
 		local bufnr = self.state.bufnr
-		local lnum = require("agent-review.preview").render(bufnr, entry.value)
+		local lnum, topfill = require("agent-review.preview").render(bufnr, entry.value)
 		local winid = self.state.winid
 		-- telescopeはdefine_previewの後のtickでバッファを窓に載せるので、それを待ってから位置を合わせる。
 		vim.schedule(function()
 			if winid and vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == bufnr then
 				pcall(vim.api.nvim_win_set_cursor, winid, { lnum, 0 })
 				vim.api.nvim_win_call(winid, function()
-					vim.cmd("normal! zz")
+					if lnum == 1 then
+						-- 1行目より上の削除行（仮想行）が隠れないよう、先頭から表示する。
+						vim.fn.winrestview({ topline = 1, topfill = topfill })
+					else
+						vim.cmd("normal! zz")
+					end
 				end)
 			end
 		end)
