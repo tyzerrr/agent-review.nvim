@@ -93,7 +93,8 @@ function Session:update_quickfix(mode, opts)
 		vim.fn.setqflist({}, "r", what)
 		if cur then
 			local new_idx
-			for i, item in ipairs(vim.fn.getqflist({ id = self.qf_id, items = 1 }).items) do
+			local items = vim.fn.getqflist({ id = self.qf_id, items = 1 }).items
+			for i, item in ipairs(items) do
 				if item.bufnr == cur.bufnr then
 					new_idx = new_idx or i
 					if item.lnum == cur.lnum then
@@ -102,6 +103,8 @@ function Session:update_quickfix(mode, opts)
 					end
 				end
 			end
+			-- 選んでいたファイルがcommit等で消えたら、同じ位置にある次の項目を選ぶ。
+			new_idx = new_idx or (#items > 0 and math.min(old.idx, #items) or nil)
 			if new_idx then
 				vim.fn.setqflist({}, "a", { id = self.qf_id, idx = new_idx })
 			end
@@ -358,6 +361,20 @@ function Session:show(rel)
 		api.nvim_win_set_buf(self.right_win, self:deleted_buffer(rel))
 	end
 	self:sync()
+end
+
+---quickfixで選ばれている項目を右窓に表示する。見ていたファイルが一覧から消えた時の移り先。
+function Session:show_qf_selection()
+	local item
+	if self:qf_list_alive() then
+		local info = vim.fn.getqflist({ id = self.qf_id, idx = 0, items = 1 })
+		item = info.items[info.idx]
+	end
+	local rel = item and self:rel_path(item.bufnr) or self.files[1].path
+	self:show(rel)
+	if item then
+		pcall(api.nvim_win_set_cursor, self.right_win, { math.max(item.lnum, 1), 0 })
+	end
 end
 
 function Session:step(delta)

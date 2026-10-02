@@ -221,13 +221,19 @@ M.show_file = with_session(function(s, rel)
 end)
 
 M.refresh = with_session(function(s)
+	-- LSPジャンプ等で一覧外のファイルを見ている時は動かさない。一覧から消えた時だけ移る。
+	local was_listed = s.current_rel ~= nil and s:file(s.current_rel) ~= nil
 	s:follow_base()
 	s:refresh_files()
 	if s.qf_id then
 		s:update_quickfix()
 	end
 	vim.cmd("checktime")
-	s:sync()
+	if was_listed and not s:file(s.current_rel) and #s.files > 0 then
+		s:show_qf_selection()
+	else
+		s:sync()
+	end
 	s:wipe_stale_buffers()
 	if vim.wo[s.right_win].diff then
 		vim.cmd("diffupdate")

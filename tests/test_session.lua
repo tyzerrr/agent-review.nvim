@@ -442,11 +442,15 @@ end
 T["auto refresh"]["shows the new commit on the base side"] = function()
 	local root = setup_repo()
 	child.lua([[require("agent-review").open()]])
-	edit_right(root .. "/a.lua")
-	commit(root, { "a.lua" })
-	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
+	edit_right(root .. "/b.lua")
+	-- commitした後にエージェントがさらに書き換え、b.luaは一覧に残る
+	commit(root, { "b.lua" })
+	H.write(root, "b.lua", { "local b = 1", "local extra = 2", "local more = 3", "return b" })
+	local head = vim.trim(H.git(root, { "rev-parse", "HEAD" }))
+	eq(wait_for(("require('agent-review')._session.base_sha == %q"):format(head)), true)
 	child.lua("vim.wait(100)")
-	eq(state().left.lines, { "local M = {}", "function M.f() return 2 end", "return M" })
+	eq(state().right.name, root .. "/b.lua")
+	eq(state().left.lines, { "local b = 1", "local extra = 2", "return b" })
 	-- 古いbaseのバッファを残さない
 	local stale = child.lua_get([[#vim.tbl_filter(function(b)
 		return vim.api.nvim_buf_get_name(b):find(require("agent-review")._session.short_sha, 1, true) == nil
@@ -473,6 +477,66 @@ T["auto refresh"]["follows HEAD moving back (reset)"] = function()
 	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
 	H.git(root, { "reset", "-q", "--soft", "HEAD~1" })
 	eq(wait_for([[require("agent-review")._session:file("a.lua") ~= nil]]), true)
+end
+
+local function qf_idx()
+	return child.lua_get([[vim.fn.getqflist({ idx = 0 }).idx]])
+end
+
+T["auto refresh"]["moves to the next file when the shown file is committed"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.lua([[vim.api.nvim_set_current_win(require("agent-review")._session.right_win)]])
+	child.cmd("cfirst")
+	child.cmd("cnext")
+	child.lua("vim.wait(50)")
+	eq(state().right.name, root .. "/b.lua")
+	commit(root, { "b.lua" })
+	eq(wait_for([[require("agent-review")._session:file("b.lua") == nil]]), true)
+	child.lua("vim.wait(100)")
+	-- quickfixは消えたb.luaの位置（次のdel.lua）を選び、左右もそれに合わせる
+	eq(qf_idx(), 2)
+	eq(qf_names()[2], "del.lua")
+	local st = state()
+	eq(st.right.name, "agent-review://deleted/del.lua")
+	eq(st.left.lines, { "return 'deleted'" })
+	eq(st.right.diff, true)
+end
+
+T["auto refresh"]["moves to the selected entry in hunks mode too"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.cmd("AgentReviewQuickfix hunks")
+	child.lua([[vim.api.nvim_set_current_win(require("agent-review")._session.right_win)]])
+	child.cmd("cfirst")
+	child.lua("vim.wait(50)")
+	eq(state().right.name, root .. "/a.lua")
+	commit(root, { "a.lua" })
+	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
+	child.lua("vim.wait(100)")
+	eq(qf_idx(), 1)
+	eq(state().right.name, root .. "/b.lua")
+	eq(child.lua_get([[vim.api.nvim_win_get_cursor(require("agent-review")._session.right_win)[1] ]]), 2)
+end
+
+T["auto refresh"]["stays on a file outside the list (e.g. after an LSP jump)"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/c.lua")
+	H.write(root, "b.lua", { "local b = 1", "local extra = 3", "return b" })
+	child.lua("vim.wait(600)")
+	eq(state().right.name, root .. "/c.lua")
+end
+
+T["auto refresh"]["stays put when everything is committed"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	commit(root, { "." })
+	eq(wait_for("#vim.fn.getqflist() == 0"), true)
+	child.lua("vim.wait(100)")
+	eq(state().right.name, root .. "/a.lua")
+	eq(child.lua_get("vim.v.errmsg"), "")
 end
 
 T["auto refresh"]["drops committed files in a git worktree too"] = function()
