@@ -223,13 +223,22 @@ end)
 M.refresh = with_session(function(s)
 	-- LSPジャンプ等で一覧外のファイルを見ている時は動かさない。一覧から消えた時だけ移る。
 	local was_listed = s.current_rel ~= nil and s:file(s.current_rel) ~= nil
+	local was_empty = s:showing_empty()
 	s:follow_base()
 	s:refresh_files()
 	if s.qf_id then
 		s:update_quickfix()
 	end
 	vim.cmd("checktime")
-	if was_listed and not s:file(s.current_rel) and #s.files > 0 then
+	local dropped = was_listed and not s:file(s.current_rel)
+	if #s.files == 0 then
+		-- 見ていたファイルがcommitされて何も残らない時は、古い内容を見せ続けないよう左右とも空にする。
+		if dropped then
+			s:show_empty()
+		else
+			s:sync()
+		end
+	elseif dropped or was_empty then
 		s:show_qf_selection()
 	else
 		s:sync()

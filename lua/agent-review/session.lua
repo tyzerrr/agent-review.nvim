@@ -225,8 +225,27 @@ function Session:placeholder(message)
 		vim.b[self.placeholder_buf].agent_review_side = "base"
 		self:map_base_buffer(self.placeholder_buf)
 	end
-	set_lines(self.placeholder_buf, { "", "  " .. message })
+	set_lines(self.placeholder_buf, message and { "", "  " .. message } or {})
 	return self.placeholder_buf
+end
+
+---全部commitされて比較するものが無くなった時に右窓へ出す空のバッファ。
+function Session:empty_buffer()
+	if not (self.empty_buf and api.nvim_buf_is_valid(self.empty_buf)) then
+		self.empty_buf = scratch_buf(SCHEME .. "empty")
+		set_lines(self.empty_buf, {})
+		vim.b[self.empty_buf].agent_review_side = "work"
+	end
+	return self.empty_buf
+end
+
+function Session:showing_empty()
+	return self.empty_buf ~= nil and api.nvim_win_get_buf(self.right_win) == self.empty_buf
+end
+
+function Session:show_empty()
+	api.nvim_win_set_buf(self.right_win, self:empty_buffer())
+	self:sync()
 end
 
 function Session:deleted_buffer(rel)
@@ -263,12 +282,16 @@ local function winbar_escape(s)
 	return (s:gsub("%%", "%%%%"))
 end
 
-function Session:update_winbar(rel, base_note)
+---@param empty? boolean 比較するファイルが無い（全部commitされた）状態
+function Session:update_winbar(rel, base_note, empty)
 	if not config.options.winbar then
 		return
 	end
 	local left, right
-	if rel then
+	if empty then
+		left = ("%%#AgentReviewWinbarBase# BASE %%* %s  (no changes)"):format(winbar_escape(self.base))
+		right = "%#AgentReviewWinbarWork# WORKING %* (no changes)"
+	elseif rel then
 		local f = self:file(rel)
 		local base_rel = f and f.old_path or rel
 		local pos = self.file_index[rel] and ("[%d/%d] "):format(self.file_index[rel], #self.files) or ""
@@ -323,11 +346,12 @@ function Session:sync()
 			set_diff(self.right_win, true)
 			self:update_winbar(rel, note)
 		else
+			local empty = buf == self.empty_buf
 			local msg = rel and "not tracked by git: " .. rel or "outside of the repository: not compared"
-			api.nvim_win_set_buf(self.left_win, self:placeholder(msg))
+			api.nvim_win_set_buf(self.left_win, self:placeholder(not empty and msg or nil))
 			set_diff(self.left_win, false)
 			set_diff(self.right_win, false)
-			self:update_winbar(nil)
+			self:update_winbar(nil, nil, empty)
 		end
 		self.left_base_buf = api.nvim_win_get_buf(self.left_win)
 		highlight.apply(self.left_win, "base")
@@ -788,6 +812,7 @@ function Session:close()
 
 	local scratch = vim.list_extend(vim.tbl_values(self.base_bufs), vim.tbl_values(self.deleted_bufs))
 	vim.list_extend(scratch, self.stale_bufs or {})
+	table.insert(scratch, self.empty_buf)
 	table.insert(scratch, self.placeholder_buf)
 	for _, buf in ipairs(scratch) do
 		if buf and api.nvim_buf_is_valid(buf) then

@@ -528,15 +528,94 @@ T["auto refresh"]["stays on a file outside the list (e.g. after an LSP jump)"] =
 	eq(state().right.name, root .. "/c.lua")
 end
 
-T["auto refresh"]["stays put when everything is committed"] = function()
-	local root = setup_repo()
-	child.lua([[require("agent-review").open()]])
-	edit_right(root .. "/a.lua")
+local function winbars()
+	return child.lua([[
+		local s = require("agent-review")._session
+		return { vim.wo[s.left_win].winbar, vim.wo[s.right_win].winbar }
+	]])
+end
+
+local function commit_all_and_wait(root)
 	commit(root, { "." })
 	eq(wait_for("#vim.fn.getqflist() == 0"), true)
 	child.lua("vim.wait(100)")
-	eq(state().right.name, root .. "/a.lua")
+end
+
+T["auto refresh"]["empties both windows when everything is committed"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	commit_all_and_wait(root)
+	local st = state()
+	eq(st.left.lines, { "" })
+	eq(st.right.lines, { "" })
+	eq(st.left.diff, false)
+	eq(st.right.diff, false)
+	eq(st.right.buftype, "nofile")
+	local bars = winbars()
+	eq(bars[1]:match("no changes") ~= nil, true)
+	eq(bars[2]:match("no changes") ~= nil, true)
 	eq(child.lua_get("vim.v.errmsg"), "")
+end
+
+T["auto refresh"]["shows the next change the agent makes after the list was empty"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	commit_all_and_wait(root)
+	H.write(root, "c.lua", { "-- changed again", "return 3" })
+	eq(wait_for(("vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(require('agent-review')._session.right_win)) == %q"):format(root .. "/c.lua")), true)
+	child.lua("vim.wait(100)")
+	local st = state()
+	eq(st.left.lines, { "-- unchanged", "return 3" })
+	eq(st.left.diff, true)
+	eq(st.right.diff, true)
+end
+
+T["auto refresh"]["opening a file from the empty view follows as usual"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	commit_all_and_wait(root)
+	edit_right(root .. "/b.lua")
+	child.lua("vim.wait(50)")
+	local st = state()
+	eq(st.right.name, root .. "/b.lua")
+	eq(st.left.lines, { "local b = 1", "local extra = 2", "return b" })
+	eq(st.left.diff, true)
+end
+
+T["auto refresh"]["navigating in the empty view does not error"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	commit_all_and_wait(root)
+	child.lua([[_G.levels = {}; vim.notify = function(_, l) table.insert(_G.levels, l) end]])
+	child.type_keys("]q")
+	child.type_keys("]f")
+	eq(child.lua_get("vim.v.errmsg"), "")
+	eq(child.lua_get("#_G.levels"), 2)
+end
+
+T["auto refresh"]["closing from the empty view leaves no review buffers"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	commit_all_and_wait(root)
+	child.lua([[require("agent-review").close()]])
+	local left = child.lua_get([[#vim.tbl_filter(function(b)
+		return vim.api.nvim_buf_get_name(b):match("^agent%-review://") ~= nil
+	end, vim.api.nvim_list_bufs())]])
+	eq(left, 0)
+	eq(child.lua_get("vim.v.errmsg"), "")
+end
+
+T["auto refresh"]["keeps a file outside the list on screen even when the list empties"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/c.lua")
+	commit_all_and_wait(root)
+	eq(state().right.name, root .. "/c.lua")
 end
 
 T["auto refresh"]["drops committed files in a git worktree too"] = function()

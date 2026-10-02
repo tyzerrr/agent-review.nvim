@@ -250,7 +250,7 @@ While a review is open, the repository is watched for file changes (`.git/` is i
 
 - New changes are added to the file list and quickfix, and reverted files drop out.
 - After a commit, the base moves to the new commit, so the committed files drop out. This works in `git worktree` checkouts too, where the refs live outside the working directory.
-- If the file you are looking at drops out (committed or reverted), both windows move to the entry quickfix now selects: the next file in the list. A file you opened yourself that was never in the list (for example via `gd`) stays on screen. When nothing is left, you get a "no changes" message and the review stays open.
+- If the file you are looking at drops out (committed or reverted), both windows move to the entry quickfix now selects: the next file in the list. A file you opened yourself that was never in the list (for example via `gd`) stays on screen. When nothing is left, both windows are cleared (the winbar says "no changes") and the review stays open; the next change the agent makes shows up there automatically.
 - Buffers changed on disk are reloaded (`:checktime`) and the diff is recomputed.
 - It also refreshes on `FocusGained` and when you leave a terminal (`TermLeave`). On Linux, file watching only covers the top-level directory, so these events fill the gap.
 
