@@ -475,6 +475,23 @@ T["auto refresh"]["follows HEAD moving back (reset)"] = function()
 	eq(wait_for([[require("agent-review")._session:file("a.lua") ~= nil]]), true)
 end
 
+T["auto refresh"]["drops committed files in a git worktree too"] = function()
+	-- worktreeではcommitが書き換えるrefが作業フォルダの外（元リポジトリの.git）にある。
+	local main = H.make_repo({ ["a.lua"] = { "a" }, ["b.lua"] = { "b" } })
+	local wt = vim.fn.resolve(vim.fn.tempname())
+	H.git(main, { "worktree", "add", "-q", "-b", "feature", wt })
+	H.git(wt, { "config", "user.email", "test@example.com" })
+	H.git(wt, { "config", "user.name", "test" })
+	H.write(wt, "a.lua", { "A" })
+	H.write(wt, "b.lua", { "B" })
+	child.lua("vim.cmd.cd(...)", { wt })
+	child.lua([[require("agent-review").open()]])
+	eq(child.lua_get([[require("agent-review")._session:file("a.lua") ~= nil]]), true)
+	commit(wt, { "a.lua" })
+	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
+	eq(child.lua_get([[require("agent-review")._session:file("b.lua") ~= nil]]), true)
+end
+
 T["auto refresh"]["keeps an explicit commit as the base"] = function()
 	local root = setup_repo()
 	local sha = vim.trim(H.git(root, { "rev-parse", "HEAD" }))

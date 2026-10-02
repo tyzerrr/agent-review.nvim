@@ -600,19 +600,31 @@ function Session:watch()
 			end)
 		)
 	end
-	local watcher = vim.uv.new_fs_event()
 	-- recursiveはmacOS/Windowsのみ。Linuxでは直下しか監視できないので下のautocmdで補う。
-	if watcher and watcher:start(self.root, { recursive = true }, function(err, filename)
-		if err then
-			return
+	local function watch_dir(path, on_change)
+		local handle = vim.uv.new_fs_event()
+		if handle and handle:start(path, { recursive = true }, function(err, filename)
+			if not err then
+				on_change(filename)
+			end
+		end) then
+			table.insert(self.fs_watchers, handle)
+		elseif handle then
+			handle:close()
 		end
+	end
+	self.fs_watchers = {}
+	watch_dir(self.root, function(filename)
 		-- .git内はrefresh中のgit status自身も書き込むので、refreshすると止まらなくなる。
 		-- commit等で比較元が動いたかだけを（書き込みの無いrev-parseで）確かめる。
 		schedule_refresh(not (filename and (filename == ".git" or filename:sub(1, 5) == ".git/")))
-	end) then
-		self.fs_watcher = watcher
-	elseif watcher then
-		watcher:close()
+	end)
+	-- worktreeではcommitで動くrefが作業フォルダの外にあるため、そちらも監視する。
+	local common = git.common_dir(self.root)
+	if common and common:sub(1, #self.root + 1) ~= self.root .. "/" then
+		watch_dir(common, function()
+			schedule_refresh(false)
+		end)
 	end
 	-- BufEnterはsync()自身が発火させるのでrefreshが止まらなくなる。ここには含めない。
 	api.nvim_create_autocmd({ "FocusGained", "TermLeave" }, { group = self.augroup, callback = schedule_refresh })
@@ -663,7 +675,7 @@ function Session:wipe_stale_buffers()
 end
 
 function Session:unwatch()
-	for _, handle in ipairs({ self.fs_watcher, self.refresh_timer }) do
+	for _, handle in ipairs(vim.list_extend({ self.refresh_timer }, self.fs_watchers or {})) do
 		if handle and not handle:is_closing() then
 			handle:close()
 		end

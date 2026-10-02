@@ -35,6 +35,13 @@ function M.git_dir(root)
 	return ok and vim.fn.resolve(vim.trim(out)) or nil
 end
 
+---refsやobjectsがある共通のgitディレクトリ。worktreeでは作業フォルダの外（元リポジトリの.git）になる。
+---@return string|nil
+function M.common_dir(root)
+	local ok, out = run(root, { "rev-parse", "--path-format=absolute", "--git-common-dir" })
+	return ok and vim.fn.resolve(vim.trim(out)) or nil
+end
+
 ---@return string|nil sha
 function M.resolve_rev(root, rev)
 	local ok, out = run(root, { "rev-parse", "--verify", "--quiet", rev .. "^{commit}" })

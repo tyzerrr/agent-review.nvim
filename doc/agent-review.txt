@@ -148,7 +148,8 @@ silently (|W12|).
 Changes inside `.git/` don't trigger a refresh by themselves, but they make
 agent-review check whether the base ref moved. When it did (for example
 after a commit) and `follow_base` is true, the base moves to the new commit
-and the committed files drop out of the review.
+and the committed files drop out of the review. In a `git worktree`, the
+shared git directory (outside the working directory) is watched as well.
 
 ==============================================================================
 6. PICKERS AND QUICKFIX                                 *agent-review-pickers*

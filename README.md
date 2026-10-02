@@ -249,7 +249,7 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 While a review is open, the repository is watched for file changes (`.git/` is ignored). When the agent writes files, the review refreshes after a short debounce:
 
 - New changes are added to the file list and quickfix, and reverted files drop out.
-- After a commit, the base moves to the new commit, so the committed files drop out. When nothing is left, you get a "no changes" message and the review stays open.
+- After a commit, the base moves to the new commit, so the committed files drop out. This works in `git worktree` checkouts too, where the refs live outside the working directory. When nothing is left, you get a "no changes" message and the review stays open.
 - Buffers changed on disk are reloaded (`:checktime`) and the diff is recomputed.
 - It also refreshes on `FocusGained` and when you leave a terminal (`TermLeave`). On Linux, file watching only covers the top-level directory, so these events fill the gap.
 
