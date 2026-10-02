@@ -577,16 +577,24 @@ function Session:watch()
 	end
 	local timer = vim.uv.new_timer()
 	self.refresh_timer = timer
-	local function schedule_refresh()
+	local pending_full = false
+	---@param full boolean falseなら比較元のコミットが動いた時だけrefreshする
+	local function schedule_refresh(full)
 		if timer:is_closing() then
 			return
 		end
+		pending_full = pending_full or full ~= false
 		timer:stop()
 		timer:start(
 			opts.debounce or 200,
 			0,
 			vim.schedule_wrap(function()
-				if self:valid() and require("agent-review")._session == self then
+				local full_now = pending_full
+				pending_full = false
+				if not (self:valid() and require("agent-review")._session == self) then
+					return
+				end
+				if full_now or self:base_moved() then
 					require("agent-review").refresh()
 				end
 			end)
@@ -595,11 +603,12 @@ function Session:watch()
 	local watcher = vim.uv.new_fs_event()
 	-- recursiveはmacOS/Windowsのみ。Linuxでは直下しか監視できないので下のautocmdで補う。
 	if watcher and watcher:start(self.root, { recursive = true }, function(err, filename)
-		-- git自身の書き込み（refresh中のgit statusやClaudeへの送信用ファイル）で無限ループしないよう.gitは無視する。
-		if err or (filename and (filename == ".git" or filename:sub(1, 5) == ".git/")) then
+		if err then
 			return
 		end
-		schedule_refresh()
+		-- .git内はrefresh中のgit status自身も書き込むので、refreshすると止まらなくなる。
+		-- commit等で比較元が動いたかだけを（書き込みの無いrev-parseで）確かめる。
+		schedule_refresh(not (filename and (filename == ".git" or filename:sub(1, 5) == ".git/")))
 	end) then
 		self.fs_watcher = watcher
 	elseif watcher then
@@ -607,6 +616,50 @@ function Session:watch()
 	end
 	-- BufEnterはsync()自身が発火させるのでrefreshが止まらなくなる。ここには含めない。
 	api.nvim_create_autocmd({ "FocusGained", "TermLeave" }, { group = self.augroup, callback = schedule_refresh })
+end
+
+local function follows_base()
+	local opts = config.options.auto_refresh
+	return not (type(opts) == "table" and opts.follow_base == false)
+end
+
+---指定したrev（HEAD等）が開いた時と別のコミットを指しているか。
+function Session:base_moved()
+	if not follows_base() then
+		return false
+	end
+	local sha = git.resolve_rev(self.root, self.base)
+	-- rebase途中などで解決できない時は動いていない扱いにする（refreshを繰り返さないため）。
+	return sha ~= nil and sha ~= self.base_sha
+end
+
+---commitした変更をレビューから外すため、revが動いたら比較元をそのコミットへ移す。
+---@return boolean moved
+function Session:follow_base()
+	if not self:base_moved() then
+		return false
+	end
+	local sha = git.resolve_rev(self.root, self.base)
+	self.base_sha = sha
+	self.short_sha = sha:sub(1, 8)
+	-- 表示中のバッファを今消すと左窓に別のバッファが入り追従が乱れるので、sync()で差し替えた後に消す。
+	self.stale_bufs = vim.list_extend(self.stale_bufs or {}, vim.tbl_values(self.base_bufs))
+	self.base_bufs = {}
+	return true
+end
+
+function Session:wipe_stale_buffers()
+	local remaining = {}
+	for _, buf in ipairs(self.stale_bufs or {}) do
+		if api.nvim_buf_is_valid(buf) then
+			if #vim.fn.win_findbuf(buf) == 0 then
+				pcall(api.nvim_buf_delete, buf, { force = true })
+			else
+				table.insert(remaining, buf)
+			end
+		end
+	end
+	self.stale_bufs = remaining
 end
 
 function Session:unwatch()
@@ -705,6 +758,7 @@ function Session:close()
 	end
 
 	local scratch = vim.list_extend(vim.tbl_values(self.base_bufs), vim.tbl_values(self.deleted_bufs))
+	vim.list_extend(scratch, self.stale_bufs or {})
 	table.insert(scratch, self.placeholder_buf)
 	for _, buf in ipairs(scratch) do
 		if buf and api.nvim_buf_is_valid(buf) then

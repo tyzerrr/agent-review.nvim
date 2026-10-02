@@ -43,7 +43,9 @@ are created by setup().
 
 :AgentReview [rev]                                              *:AgentReview*
     Open a review of the working tree against [rev] (default: config.base).
-    The revision is resolved to a commit when the review opens.
+    When the revision names a ref such as HEAD and the ref moves (commit,
+    reset, checkout), the base moves with it, so committed changes drop out.
+    A commit hash stays put. See `auto_refresh.follow_base`.
 
 :AgentReviewToggle [rev]                                  *:AgentReviewToggle*
     Toggle the review.
@@ -117,7 +119,8 @@ Actions and their <Plug> mappings:
     winbar = true,
     picker = "auto",            -- "auto" | "telescope" | "ui_select"
     quickfix = { auto = true, open = true, height = 8, mode = "files" },
-    auto_refresh = { enabled = true, debounce = 200 },  -- or false
+    auto_refresh = { enabled = true, debounce = 200,    -- or false
+                     follow_base = true },
     keymaps = {
       global = { toggle = "<leader>dr", open_rev = "<leader>dR",
                  files = "<leader>dl", hunks = "<leader>dh" },
@@ -141,6 +144,11 @@ reloaded with |:checktime| and the diff is updated. |FocusGained| and
 |TermLeave| also refresh, which covers Linux, where only the top-level
 directory can be watched. Buffers with unsaved edits are never overwritten
 silently (|W12|).
+
+Changes inside `.git/` don't trigger a refresh by themselves, but they make
+agent-review check whether the base ref moved. When it did (for example
+after a commit) and `follow_base` is true, the base moves to the new commit
+and the committed files drop out of the review.
 
 ==============================================================================
 6. PICKERS AND QUICKFIX                                 *agent-review-pickers*

@@ -35,6 +35,9 @@ M.defaults = {
 		enabled = true,
 		-- 連続した書き込みを1回のrefreshにまとめる待ち時間(ms)
 		debounce = 200,
+		-- base（HEAD等）が別のコミットを指したら比較元も移す。commitした変更はレビューから消える。
+		-- false で開いた時のコミットに固定する。
+		follow_base = true,
 	},
 	-- 値は "キー" | { "キー", ... } | false（無効）。keymaps = false で全て無効。
 	-- 操作名の一覧は lua/agent-review/keymaps.lua の actions を参照。

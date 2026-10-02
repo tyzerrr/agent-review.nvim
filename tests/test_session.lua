@@ -418,6 +418,81 @@ T["auto refresh"]["can be disabled"] = function()
 	eq(child.lua_get("#vim.fn.getqflist()"), before)
 end
 
+local function commit(root, paths)
+	H.git(root, vim.list_extend({ "add", "-A", "--" }, paths))
+	H.git(root, { "commit", "-q", "-m", "agent commit" })
+end
+
+local function qf_names()
+	return child.lua_get([[vim.tbl_map(function(i)
+		return i.module ~= "" and i.module or vim.fn.fnamemodify(vim.api.nvim_buf_get_name(i.bufnr), ":t")
+	end, vim.fn.getqflist())]])
+end
+
+T["auto refresh"]["drops files once they are committed"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	commit(root, { "a.lua" })
+	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
+	eq(vim.tbl_contains(qf_names(), "a.lua"), false)
+	eq(vim.tbl_contains(qf_names(), "b.lua"), true)
+	eq(child.lua_get([[require("agent-review")._session.base_sha]]), vim.trim(H.git(root, { "rev-parse", "HEAD" })))
+end
+
+T["auto refresh"]["shows the new commit on the base side"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	edit_right(root .. "/a.lua")
+	commit(root, { "a.lua" })
+	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
+	child.lua("vim.wait(100)")
+	eq(state().left.lines, { "local M = {}", "function M.f() return 2 end", "return M" })
+	-- 古いbaseのバッファを残さない
+	local stale = child.lua_get([[#vim.tbl_filter(function(b)
+		return vim.api.nvim_buf_get_name(b):find(require("agent-review")._session.short_sha, 1, true) == nil
+			and vim.api.nvim_buf_get_name(b):match("^agent%-review://%x+/") ~= nil
+	end, vim.api.nvim_list_bufs())]])
+	eq(stale, 0)
+end
+
+T["auto refresh"]["empties the list when everything is committed"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	child.lua([[_G.msgs = {}; vim.notify = function(m) table.insert(_G.msgs, m) end]])
+	commit(root, { "." })
+	eq(wait_for("#vim.fn.getqflist() == 0"), true)
+	eq(child.lua_get("vim.v.errmsg"), "")
+	eq(child.lua_get([[vim.tbl_contains(vim.tbl_map(function(m) return m:match("no changes") ~= nil end, _G.msgs), true)]]), true)
+	eq(child.lua_get([[require("agent-review")._session ~= nil]]), true)
+end
+
+T["auto refresh"]["follows HEAD moving back (reset)"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").open()]])
+	commit(root, { "a.lua" })
+	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
+	H.git(root, { "reset", "-q", "--soft", "HEAD~1" })
+	eq(wait_for([[require("agent-review")._session:file("a.lua") ~= nil]]), true)
+end
+
+T["auto refresh"]["keeps an explicit commit as the base"] = function()
+	local root = setup_repo()
+	local sha = vim.trim(H.git(root, { "rev-parse", "HEAD" }))
+	child.lua([[require("agent-review").open(...)]], { sha })
+	commit(root, { "a.lua" })
+	child.lua("vim.wait(600)")
+	eq(child.lua_get([[require("agent-review")._session:file("a.lua") ~= nil]]), true)
+end
+
+T["auto refresh"]["follow_base = false keeps the commit the review opened with"] = function()
+	local root = setup_repo()
+	child.lua([[require("agent-review").setup({ auto_refresh = { follow_base = false } })]])
+	child.lua([[require("agent-review").open()]])
+	commit(root, { "a.lua" })
+	child.lua("vim.wait(600)")
+	eq(child.lua_get([[require("agent-review")._session:file("a.lua") ~= nil]]), true)
+end
+
 T["auto refresh"]["stops watching when the review is closed"] = function()
 	local root = setup_repo()
 	child.lua([[require("agent-review").open()]])

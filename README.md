@@ -97,7 +97,7 @@ Review against something other than `HEAD`:
 :AgentReview origin/main   " the whole branch
 ```
 
-The base revision is resolved to a commit when the review opens, so if the agent commits while you review, the base doesn't move.
+When a branch name like `HEAD` moves to another commit (you or the agent commit, reset or check out), the base moves with it, so committed changes drop out of the review. A commit hash given directly stays put. Set `auto_refresh.follow_base = false` to keep the commit the review opened with.
 
 ## Keymaps
 
@@ -249,6 +249,7 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 While a review is open, the repository is watched for file changes (`.git/` is ignored). When the agent writes files, the review refreshes after a short debounce:
 
 - New changes are added to the file list and quickfix, and reverted files drop out.
+- After a commit, the base moves to the new commit, so the committed files drop out. When nothing is left, you get a "no changes" message and the review stays open.
 - Buffers changed on disk are reloaded (`:checktime`) and the diff is recomputed.
 - It also refreshes on `FocusGained` and when you leave a terminal (`TermLeave`). On Linux, file watching only covers the top-level directory, so these events fill the gap.
 
@@ -279,6 +280,7 @@ require("agent-review").setup({
   auto_refresh = {        -- false to disable
     enabled = true,
     debounce = 200,       -- ms to wait so a burst of writes refreshes once
+    follow_base = true,   -- move the base when HEAD (or the given ref) moves
   },
   keymaps = {
     global = { toggle = "<leader>dr", open_rev = "<leader>dR", files = "<leader>dl", hunks = "<leader>dh" },

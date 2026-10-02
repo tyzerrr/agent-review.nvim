@@ -221,15 +221,23 @@ M.show_file = with_session(function(s, rel)
 end)
 
 M.refresh = with_session(function(s)
+	s:follow_base()
 	s:refresh_files()
 	if s.qf_id then
 		s:update_quickfix()
 	end
 	vim.cmd("checktime")
 	s:sync()
+	s:wipe_stale_buffers()
 	if vim.wo[s.right_win].diff then
 		vim.cmd("diffupdate")
 	end
+	-- 全部commitした時に一度だけ知らせる（自動refreshのたびに出さない）。
+	local empty = #s.files == 0
+	if empty and not s.notified_empty then
+		notify("no changes against " .. s.base)
+	end
+	s.notified_empty = empty
 end)
 
 return M
