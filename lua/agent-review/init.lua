@@ -225,6 +225,36 @@ function M.toggle_viewed()
 	s:toggle_viewed(rel)
 end
 
+local function with_pr(fn)
+	return with_session(function(s, ...)
+		if not s.pr then
+			return notify("not reviewing a pull request (:AgentReviewPR)", vim.log.levels.WARN)
+		end
+		if not s.pr.threads then
+			return notify("comments are still loading")
+		end
+		return fn(s, ...)
+	end)
+end
+
+---カーソル行のレビューコメントのスレッドを浮動窓で開く。
+M.pr_thread = with_pr(function(s)
+	local win = api.nvim_get_current_win()
+	if win ~= s.left_win and win ~= s.right_win then
+		win = s.right_win
+	end
+	local found = require("agent-review.pr.threads").at_cursor(s, win)
+	if #found == 0 then
+		return notify("no comments on this line")
+	end
+	require("agent-review.pr.threads").open_float(found)
+end)
+
+---PRの説明・レビュー・コメントを時系列で開く。
+M.pr_conversation = with_pr(function(s)
+	require("agent-review.pr.threads").open_conversation(s)
+end)
+
 ---GitHubのPR一覧を開く。番号（"123" / "#123"）ならそのPRを直接レビューする。
 ---@param arg? string pr.presets の名前かPR番号。nil なら pr.lists
 function M.pr_list(arg)
@@ -244,7 +274,11 @@ function M.hunks()
 end
 
 ---@param mode? "files"|"hunks"
+---@param mode? "files"|"hunks"|"comments"
 M.quickfix = with_session(function(s, mode)
+	if mode == "comments" and not s.pr then
+		return notify("comments are available when reviewing a pull request (:AgentReviewPR)", vim.log.levels.WARN)
+	end
 	s:refresh_files()
 	s:update_quickfix(mode)
 	s:open_quickfix_window()
@@ -322,6 +356,10 @@ function M.open_pr_session(repo, meta, checkout)
 		watch = false,
 	})
 	s.pr = { repo = repo, meta = meta, head = checkout.head }
+	local cached = require("agent-review.pr.comments").cached(repo, meta.number)
+	if cached then
+		s.pr.threads, s.pr.conversation = cached.threads, cached.conversation
+	end
 	s:refresh_files()
 	if #s.review_files == 0 then
 		pcall(api.nvim_del_augroup_by_id, s.augroup)
@@ -330,6 +368,7 @@ function M.open_pr_session(repo, meta, checkout)
 	M._session = s
 	s:open(s.review_files[1].path)
 	emit("AgentReviewOpen", s)
+	require("agent-review.pr.open").load_comments(s)
 end
 
 return M

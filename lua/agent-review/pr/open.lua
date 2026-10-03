@@ -39,14 +39,33 @@ function M.meta(pull)
 end
 
 ---PRの情報を取る。ETagで問い合わせるので、変わっていなければレート制限を使わない。
----@param cb fun(err: string|nil, meta: AgentReviewPr|nil)
+---@param cb fun(err: string|nil, meta: AgentReviewPr|nil, info: { from_cache: boolean }|nil)
 local function fetch_meta(repo, number, cb)
-	gh.rest_cached(("%s/pulls/%d"):format(repo.key, number), ("repos/%s/pulls/%d"):format(repo.nwo, number), function(err, pull)
+	gh.rest_cached(("%s/pulls/%d"):format(repo.key, number), ("repos/%s/pulls/%d"):format(repo.nwo, number), function(err, pull, info)
 		if err then
 			return cb(("PR #%d: %s"):format(number, err.message))
 		end
-		cb(nil, M.meta(pull))
+		cb(nil, M.meta(pull), info)
 	end, { hostname = repo.host })
+end
+
+---レビューコメントを取得して表示する。
+---@param s AgentReviewSession
+function M.load_comments(s)
+	local pr = s.pr
+	require("agent-review.pr.comments").fetch(pr.repo, pr.meta.number, function(err, data)
+		if err then
+			return notify(("PR #%d comments: %s"):format(pr.meta.number, err.message), vim.log.levels.WARN)
+		end
+		if s.closed then
+			return
+		end
+		pr.threads, pr.conversation = data.threads, data.conversation
+		require("agent-review.pr.threads").annotate(s)
+		if s.qf_mode == "comments" and s.qf_id then
+			s:update_quickfix()
+		end
+	end)
 end
 
 ---@param number integer
@@ -74,10 +93,14 @@ end
 ---@param cb fun(changed: boolean)
 function M.update(s, cb)
 	local pr = s.pr
-	fetch_meta(pr.repo, pr.meta.number, function(err, meta)
+	fetch_meta(pr.repo, pr.meta.number, function(err, meta, info)
 		if err then
 			notify(err, vim.log.levels.WARN)
 			return cb(false)
+		end
+		-- コメントが付くとPRの更新日時が変わりETagも変わる。304（変化なし）ならコメントも取り直さない。
+		if not info.from_cache then
+			M.load_comments(s)
 		end
 		if meta.head_sha == pr.head then
 			return cb(false)

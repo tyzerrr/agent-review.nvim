@@ -66,12 +66,15 @@ are created by setup().
     `#123`), or when a PR is picked, the PR opens in the review layout.
     See |agent-review-pr|.
 
+:AgentReviewPRConversation                         *:AgentReviewPRConversation*
+    Show the reviewed PR's description, reviews and comments in time order.
+
 :AgentReviewPRClean                                       *:AgentReviewPRClean*
     Remove the checked-out pull requests that are not being reviewed.
 
-:AgentReviewQuickfix [files|hunks]                      *:AgentReviewQuickfix*
-    Rebuild the quickfix list with one entry per file or per hunk, and open
-    it.
+:AgentReviewQuickfix [files|hunks|comments]             *:AgentReviewQuickfix*
+    Rebuild the quickfix list with one entry per file, per hunk, or (when
+    reviewing a PR) per review thread, and open it.
 
 :AgentReviewRefresh                                      *:AgentReviewRefresh*
     Reload the changed files and buffers. Usually not needed: see
@@ -88,6 +91,7 @@ Defaults:
   review  ]f          next_file       [f          prev_file
           ]q          qf_next         [q          qf_prev
           <leader>dv  toggle_viewed
+          <leader>dc  pr_thread       <leader>dC  pr_conversation
   base    q           close           <C-l> (x)   send_to_claude
   quickfix <CR>      qf_open         <Tab>       toggle_viewed
 
@@ -114,6 +118,8 @@ Actions and their <Plug> mappings:
   qf_next          <Plug>(agent-review-qf-next)
   qf_prev          <Plug>(agent-review-qf-prev)
   qf_open          <Plug>(agent-review-qf-open)
+  pr_thread        <Plug>(agent-review-pr-thread)
+  pr_conversation  <Plug>(agent-review-pr-conversation)
   toggle_viewed    <Plug>(agent-review-toggle-viewed)
   refresh          <Plug>(agent-review-refresh)
   quickfix_files   <Plug>(agent-review-quickfix-files)
@@ -189,6 +195,12 @@ quickfix. The code is checked out under
 repository (`repo.git`), so nothing is written to your repository. The diff
 is computed locally from fetched commits; only the PR's metadata comes from
 the API (with an ETag). |:AgentReviewRefresh| picks up new pushes.
+
+Review comments are fetched with one GraphQL request. Commented lines get a
+sign and a summary at the end of the line (comments on removed lines on the
+base side); <leader>dc opens the threads on the cursor line, <leader>dC the
+whole conversation, and `:AgentReviewQuickfix comments` lists every thread.
+Comments are fetched again on refresh only when the PR changed.
 
 Pull request lists are written with plain keys instead of GitHub's search
 syntax. Each entry of `pr.lists` is one search; the results are merged:

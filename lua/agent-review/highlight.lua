@@ -38,6 +38,15 @@ function M.setup()
 		AgentReviewFiller = { fg = blend(fg, bg, 0.25) },
 		AgentReviewWinbarBase = { fg = RED, bold = true },
 		AgentReviewWinbarWork = { fg = GREEN, bold = true },
+		AgentReviewComment = { link = "DiagnosticInfo" },
+		AgentReviewCommentResolved = { link = "Comment" },
+		-- コメントした人ごとの色。同じ人は常に同じ色になる。
+		AgentReviewAuthor1 = { fg = 0x58a6ff, bold = true },
+		AgentReviewAuthor2 = { fg = 0xd2a8ff, bold = true },
+		AgentReviewAuthor3 = { fg = 0x3fb950, bold = true },
+		AgentReviewAuthor4 = { fg = 0xf0883e, bold = true },
+		AgentReviewAuthor5 = { fg = 0xff7b72, bold = true },
+		AgentReviewAuthor6 = { fg = 0x39c5cf, bold = true },
 	}
 	for name, spec in pairs(groups) do
 		vim.api.nvim_set_hl(0, name, config.options.highlights[name] or spec)

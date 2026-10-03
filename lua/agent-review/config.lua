@@ -61,6 +61,9 @@ M.defaults = {
 		list_ttl = 60,
 		-- 1つの検索で取得するPRの最大数。
 		limit = 50,
+		-- レビューコメントのある行のサイン（解決済みは resolved_sign）。
+		comment_sign = "💬",
+		resolved_sign = "✓",
 	},
 	-- エージェントがファイルを書き換えたら自動でrefreshする。false で無効。
 	auto_refresh = {
@@ -90,6 +93,8 @@ M.defaults = {
 			qf_next = "]q",
 			qf_prev = "[q",
 			toggle_viewed = "<leader>dv",
+			pr_thread = "<leader>dc",
+			pr_conversation = "<leader>dC",
 		},
 		-- base側（左）のバッファだけに設定されるキー。
 		-- 作業ツリー側にqを置かないのはマクロ記録と衝突するため。
