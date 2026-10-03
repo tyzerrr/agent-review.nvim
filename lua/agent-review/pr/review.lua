@@ -234,7 +234,11 @@ local function send(s, event, body)
 			return notify("submit failed: " .. table.concat(messages, "; "), vim.log.levels.ERROR)
 		end
 		local review = data.review and data.review.pullRequestReview
-		notify(("review submitted%s"):format(review and review.url and (": " .. review.url) or ""))
+		if review then
+			notify(("review submitted%s"):format(review.url and (": " .. review.url) or ""))
+		else
+			notify(("submitted %s"):format(draft.describe(d)))
+		end
 	end, { hostname = repo.host })
 end
 
