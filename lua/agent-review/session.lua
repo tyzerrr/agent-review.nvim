@@ -787,13 +787,20 @@ function Session:follow_base()
 	if not self:base_moved() then
 		return false
 	end
-	local sha = git.resolve_rev(self.root, self.base)
+	self:set_base(git.resolve_rev(self.root, self.base))
+	return true
+end
+
+---比較元を別のコミットに移す（commitへの追従、PRへの新しいpush）。
+function Session:set_base(sha)
+	if sha == self.base_sha then
+		return
+	end
 	self.base_sha = sha
 	self.short_sha = sha:sub(1, 8)
 	-- 表示中のバッファを今消すと左窓に別のバッファが入り追従が乱れるので、sync()で差し替えた後に消す。
 	self.stale_bufs = vim.list_extend(self.stale_bufs or {}, vim.tbl_values(self.base_bufs))
 	self.base_bufs = {}
-	return true
 end
 
 function Session:wipe_stale_buffers()

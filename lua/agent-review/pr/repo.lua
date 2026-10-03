@@ -21,7 +21,8 @@ function M.detect(dir)
 		return nil, "not inside a git repository"
 	end
 	local remote = (config.options.pr or {}).remote or "origin"
-	local res = vim.system({ "git", "remote", "get-url", remote }, { cwd = root, text = true }):wait()
+	-- get-url は insteadOf の書き換え後を返すので、どのGitHubリポジトリかは書き換え前の設定値で判断する。
+	local res = vim.system({ "git", "config", "--get", "remote." .. remote .. ".url" }, { cwd = root, text = true }):wait()
 	if res.code ~= 0 then
 		return nil, ("no git remote '%s' (set pr.remote)"):format(remote)
 	end

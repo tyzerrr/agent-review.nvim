@@ -59,11 +59,15 @@ are created by setup().
 :AgentReviewHunks                                          *:AgentReviewHunks*
     Pick a changed hunk.
 
-:AgentReviewPR [preset]                                       *:AgentReviewPR*
+:AgentReviewPR [preset|number]                                *:AgentReviewPR*
     List GitHub pull requests of the repository (via the `pr.remote` remote
-    and the gh CLI). Without an argument, `pr.lists` is used; with one, the
-    preset of that name from `pr.presets`. Picking a PR opens it in the
-    browser for now. See |agent-review-pr|.
+    and the gh CLI). Without an argument, `pr.lists` is used; with a name,
+    the preset of that name from `pr.presets`. With a number (`123` or
+    `#123`), or when a PR is picked, the PR opens in the review layout.
+    See |agent-review-pr|.
+
+:AgentReviewPRClean                                       *:AgentReviewPRClean*
+    Remove the checked-out pull requests that are not being reviewed.
 
 :AgentReviewQuickfix [files|hunks]                      *:AgentReviewQuickfix*
     Rebuild the quickfix list with one entry per file or per hunk, and open
@@ -178,6 +182,14 @@ the ends of the list and accept a count. Refreshing keeps the current entry
 selected.
 
                                                              *agent-review-pr*
+A pull request opens like a local review: its code on the right (with LSP),
+the merge-base with the target branch on the left, the changed files in
+quickfix. The code is checked out under
+`<state>/github.com/owner/repo/<number>` from a private copy of the
+repository (`repo.git`), so nothing is written to your repository. The diff
+is computed locally from fetched commits; only the PR's metadata comes from
+the API (with an ETag). |:AgentReviewRefresh| picks up new pushes.
+
 Pull request lists are written with plain keys instead of GitHub's search
 syntax. Each entry of `pr.lists` is one search; the results are merged:
 >lua

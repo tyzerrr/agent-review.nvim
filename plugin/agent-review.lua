@@ -54,8 +54,11 @@ end, {
 			return vim.startswith(n, arglead)
 		end, require("agent-review.pr.list").preset_names())
 	end,
-	desc = "List GitHub pull requests (optionally a preset from pr.presets)",
+	desc = "List GitHub pull requests (a preset from pr.presets), or review PR <number>",
 })
+cmd("AgentReviewPRClean", function()
+	require("agent-review.pr.open").clean()
+end, { desc = "Remove checked-out pull requests that are not being reviewed" })
 cmd("AgentReviewRefresh", function()
 	require("agent-review").refresh()
 end, { desc = "Reload changed files and diff" })

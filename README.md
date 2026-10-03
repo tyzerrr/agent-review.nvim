@@ -204,7 +204,8 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `:AgentReviewToggle [rev]` | Toggle the review |
 | `:AgentReviewClose` | Close the review tab |
 | `:AgentReviewFiles` | Pick a changed file |
-| `:AgentReviewPR [preset]` | List GitHub pull requests (the default lists, or a preset from `pr.presets`) |
+| `:AgentReviewPR [preset\|number]` | List GitHub pull requests (the default lists, or a preset from `pr.presets`), or review PR `<number>` |
+| `:AgentReviewPRClean` | Remove checked-out PRs that are not being reviewed |
 | `:AgentReviewHunks` | Pick a changed hunk |
 | `:AgentReviewQuickfix [files\|hunks]` | Rebuild the quickfix list and open it |
 | `:AgentReviewRefresh` | Reload the changed files and buffers now (normally done for you, see `auto_refresh`) |
@@ -252,14 +253,36 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 - **Other windows are kept**: any window you opened in the review tab that isn't part of the review (help, another file, another agent's terminal) is reopened in the tab you return to, so closing the review only closes the diff.
 - **Balanced layout**: opening, closing or resizing the Claude terminal re-balances the two diff windows. Resizing the diff windows yourself is left alone.
 
-## Pull requests (in progress)
+## Pull requests
 
-Reviewing other people's pull requests is being built in phases. Today you can **list** them:
+Review anyone's pull request in the same layout: the PR's code on the right with your language server, the base on the left, every changed file in quickfix. Reading and writing review comments is coming next.
+
+- `:AgentReviewPR 123` (or pick one from the list) opens PR #123 for review.
+- The diff is the same as GitHub's "Files changed": against the merge-base with the target branch (for merged PRs, the target branch as GitHub recorded it).
+- `:AgentReviewRefresh` picks up new commits pushed to the PR.
+- `:AgentReviewPRClean` removes the checked-out PRs you are not reviewing.
+
+### Where the PR's code lives
+
+Nothing is written to your repository: no worktree, no branch, no ref, nothing under `.git`.
+
+```
+~/.local/state/agent-review/github.com/owner/repo/   ($XDG_STATE_HOME or pr.state_dir)
+├── repo.git/   a private copy of your repository (cloned locally once, hard-linked, ~ the size of .git)
+├── 123/        PR #123 checked out from it
+└── 456/
+```
+
+- The PR's commits are fetched into `repo.git` with `git fetch`, so the diff costs no API calls. Only the PR's metadata (title, head, base) comes from the GitHub API, with an ETag so an unchanged PR doesn't count against the rate limit.
+- Reopening a PR whose head hasn't moved skips the fetch entirely (about 1s on a real repository).
+- Your language server runs on the PR's checkout like on any other project. Untracked dependencies (for example `node_modules`) aren't there, so a TypeScript server may need them installed in the checkout.
+
+### Listing pull requests
 
 - `:AgentReviewPR` (or `<leader>dp`) lists the pull requests of the repository you opened Neovim in. It uses the `origin` remote (`pr.remote`) and needs the [GitHub CLI](https://cli.github.com) (`gh auth login`).
 - By default you see open PRs **you opened** plus open PRs where **you or one of your teams** is asked to review.
 - Each line shows the number, title, author, draft/merged/closed, review state, CI, `+added -removed`, the number of files and how long ago it was updated. The preview shows the description.
-- Picking a PR opens it in the browser for now. Opening its diff in the review layout comes next.
+- `<CR>` opens the PR for review; `<C-b>` (Telescope) opens it in the browser instead.
 
 You describe the lists with plain keys instead of GitHub's search syntax:
 

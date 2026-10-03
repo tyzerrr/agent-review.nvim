@@ -89,10 +89,15 @@ function M.describe(item)
 	return lines
 end
 
----選んだPRを開く。diffのレビューはフェーズ2で作るので、それまではブラウザで開く。
+---選んだPRをレビュー画面で開く。
+---@param item AgentReviewPrItem
+function M.select(_, item)
+	require("agent-review.pr.open").open(item.number)
+end
+
 ---@param repo AgentReviewRepo
 ---@param item AgentReviewPrItem
-function M.select(repo, item)
+function M.browse(repo, item)
 	local target = repo.host == "github.com" and repo.nwo or repo.key
 	gh.run({ "pr", "view", tostring(item.number), "--web", "--repo", target }, {}, function(err)
 		if err then
@@ -167,12 +172,19 @@ local function telescope_pick(repo, preset)
 				vim.bo[self.state.bufnr].filetype = "markdown"
 			end,
 		}),
-		attach_mappings = function(prompt_bufnr)
+		attach_mappings = function(prompt_bufnr, map)
 			actions.select_default:replace(function()
 				local entry = action_state.get_selected_entry()
 				actions.close(prompt_bufnr)
 				if entry then
 					M.select(repo, entry.value)
+				end
+			end)
+			-- <C-b>: レビューせずブラウザで開く
+			map({ "i", "n" }, "<C-b>", function()
+				local entry = action_state.get_selected_entry()
+				if entry then
+					M.browse(repo, entry.value)
 				end
 			end)
 			return true
