@@ -275,7 +275,7 @@ M.refresh = with_session(function(s)
 	-- 全部commitした時に一度だけ知らせる（自動refreshのたびに出さない）。
 	local empty = #s.review_files == 0
 	if empty and not s.notified_empty then
-		notify("no changes against " .. s.base)
+		notify("no changes against " .. s.label)
 	end
 	s.notified_empty = empty
 end)

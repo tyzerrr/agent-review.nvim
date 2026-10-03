@@ -45,4 +45,24 @@ function H.new_child()
 	return child
 end
 
+H.FAKE_GH = vim.fn.getcwd() .. "/tests/fixtures/gh"
+
+---偽ghの応答規則を書いたディレクトリを作る。FAKE_GH_DIR に渡して使う。
+---@param rules table[] tests/fixtures/gh の規則
+function H.fake_gh(rules)
+	local dir = vim.fn.tempname()
+	vim.fn.mkdir(dir, "p")
+	vim.fn.writefile({ vim.json.encode(rules) }, dir .. "/responses.json")
+	return dir
+end
+
+---偽ghが受けた呼び出しの一覧（{ args, stdin, if_none_match }）。
+function H.gh_calls(dir)
+	local path = dir .. "/calls.jsonl"
+	if vim.fn.filereadable(path) == 0 then
+		return {}
+	end
+	return vim.tbl_map(vim.json.decode, vim.fn.readfile(path))
+end
+
 return H

@@ -664,6 +664,58 @@ T["auto refresh"]["stops watching when the review is closed"] = function()
 	eq(child.lua_get("vim.v.errmsg"), "")
 end
 
+T["session options"] = MiniTest.new_set()
+
+-- PRレビューでは比較元をmerge-baseに固定し、作業ツリーの監視もしない。その口をSession.newに設ける。
+local function open_with_options(root, opts)
+	child.lua(
+		[[
+		local root, opts = ...
+		local git = require("agent-review.git")
+		local Session = require("agent-review.session")
+		local s = Session.new(root, "HEAD", git.resolve_rev(root, "HEAD"), opts)
+		s:refresh_files()
+		require("agent-review")._session = s
+		s:open(s.review_files[1].path)
+	]],
+		{ root, opts }
+	)
+end
+
+T["session options"]["label replaces the base name in the winbar and quickfix title"] = function()
+	local root = setup_repo()
+	open_with_options(root, { label = "PR #12" })
+	eq(child.lua_get([[vim.fn.getqflist({ title = 1 }).title]]), "Agent Review: PR #12")
+	eq(child.lua_get([[vim.wo[require("agent-review")._session.left_win].winbar]]):match("PR #12") ~= nil, true)
+end
+
+T["session options"]["follow_base = false keeps the base even when HEAD moves"] = function()
+	local root = setup_repo()
+	open_with_options(root, { follow_base = false })
+	commit(root, { "a.lua" })
+	child.lua("vim.wait(600)")
+	child.lua([[require("agent-review").refresh()]])
+	eq(child.lua_get([[require("agent-review")._session:file("a.lua") ~= nil]]), true)
+end
+
+T["session options"]["watch = false does not refresh on file changes"] = function()
+	local root = setup_repo()
+	open_with_options(root, { watch = false })
+	count_refreshes()
+	H.write(root, "c.lua", { "-- changed" })
+	child.lua("vim.wait(600)")
+	eq(child.lua_get("_G.refreshes"), 0)
+	eq(child.lua_get([[#require("agent-review")._session.fs_watchers]]), 0)
+end
+
+T["session options"]["defaults behave like a local review"] = function()
+	local root = setup_repo()
+	open_with_options(root, nil)
+	eq(child.lua_get([[vim.fn.getqflist({ title = 1 }).title]]), "Agent Review: HEAD")
+	commit(root, { "a.lua" })
+	eq(wait_for([[require("agent-review")._session:file("a.lua") == nil]]), true)
+end
+
 T["commands"] = MiniTest.new_set()
 
 T["commands"][":AgentReview and :AgentReviewClose work"] = function()

@@ -1,0 +1,87 @@
+#!/usr/bin/env -S nvim --clean -l
+-- テスト用の偽 gh（GitHubは外部依存なのでここだけ偽物にする）。
+-- $FAKE_GH_DIR/responses.json の規則で応答し、呼び出しを $FAKE_GH_DIR/calls.jsonl に記録する。
+-- 規則: { match = { "引数や標準入力に含まれる文字列", ... }, status = 200, headers = {}, body = {}|"", stderr = "", exit = n }
+-- 本物の gh と同じく、HTTP 300以上は終了コード1で、-i の時は標準出力に "HTTP/2.0 <status>" とヘッダを出す。
+local dir = assert(os.getenv("FAKE_GH_DIR"), "FAKE_GH_DIR is not set")
+local args = {}
+for i = 1, #arg do
+	args[i] = arg[i]
+end
+local joined = table.concat(args, " ")
+
+local stdin = ""
+for i, a in ipairs(args) do
+	if a == "--input" and args[i + 1] == "-" then
+		stdin = io.stdin:read("*a") or ""
+	end
+end
+
+local if_none_match
+for i, a in ipairs(args) do
+	if a == "-H" and args[i + 1] then
+		if_none_match = args[i + 1]:match("^[Ii]f%-[Nn]one%-[Mm]atch:%s*(.+)$") or if_none_match
+	end
+end
+
+local log = io.open(dir .. "/calls.jsonl", "a")
+log:write(vim.json.encode({ args = args, stdin = stdin, if_none_match = if_none_match or vim.NIL }), "\n")
+log:close()
+
+local f = assert(io.open(dir .. "/responses.json", "r"))
+local rules = vim.json.decode(f:read("*a"))
+f:close()
+
+local rule
+for _, r in ipairs(rules) do
+	local ok = true
+	for _, m in ipairs(r.match or {}) do
+		if not (joined:find(m, 1, true) or stdin:find(m, 1, true)) then
+			ok = false
+			break
+		end
+	end
+	if ok then
+		rule = r
+		break
+	end
+end
+
+if not rule then
+	io.stderr:write("fake gh: no response for: " .. joined .. "\n")
+	os.exit(2)
+end
+
+if rule.exit then
+	io.stderr:write(rule.stderr or "")
+	os.exit(rule.exit)
+end
+
+local status = rule.status or 200
+local headers = rule.headers or {}
+local body = rule.body
+if type(body) == "table" then
+	body = vim.json.encode(body)
+end
+body = body or ""
+if headers.ETag and if_none_match == headers.ETag then
+	status, body = 304, ""
+end
+
+if vim.tbl_contains(args, "-i") then
+	local reason = ({ [200] = "OK", [304] = "Not Modified", [401] = "Unauthorized", [404] = "Not Found" })[status] or ""
+	io.stdout:write(("HTTP/2.0 %d %s\r\n"):format(status, reason))
+	for k, v in pairs(headers) do
+		io.stdout:write(("%s: %s\r\n"):format(k, v))
+	end
+	io.stdout:write("\r\n")
+end
+io.stdout:write(body)
+
+if status >= 300 then
+	local ok, decoded = pcall(vim.json.decode, body)
+	local message = ok and type(decoded) == "table" and decoded.message or nil
+	io.stderr:write(message and ("gh: %s (HTTP %d)\n"):format(message, status) or ("gh: HTTP %d\n"):format(status))
+	os.exit(1)
+end
+os.exit(0)
