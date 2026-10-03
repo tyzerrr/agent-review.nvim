@@ -133,7 +133,10 @@ T["refresh asks GitHub with the cached ETag"] = function()
 	wait_session()
 	child.cmd("AgentReviewRefresh")
 	child.lua("vim.wait(500)")
-	local calls = H.gh_calls(gh_dir)
+	-- コメントの取得（GraphQL）は数えず、PRの情報を取るRESTだけを見る
+	local calls = vim.tbl_filter(function(c)
+		return c.args[2] == "-i"
+	end, H.gh_calls(gh_dir))
 	eq(#calls, 2)
 	eq(calls[2].if_none_match, '"h1"')
 end

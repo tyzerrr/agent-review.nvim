@@ -149,24 +149,33 @@ function Session:update_quickfix(mode, opts)
 				end
 			end
 		or nil
-	local list = changes.collect(self.root, self.base_sha, self.review_files)
-	local n_viewed = #vim.tbl_filter(function(f)
-		return self:is_viewed(f.path)
-	end, self.review_files)
-	local title = "Agent Review: " .. self.label .. (mode == "hunks" and " (hunks)" or "")
-	if n_viewed > 0 then
-		title = title .. (" (%d/%d viewed)"):format(n_viewed, #self.review_files)
+	local what
+	if mode == "comments" then
+		what = {
+			title = "Agent Review: " .. self.label .. " (comments)",
+			items = (self.pr and self.pr.threads) and require("agent-review.pr.threads").qf_items(self) or {},
+			context = { agent_review = true },
+		}
+	else
+		local list = changes.collect(self.root, self.base_sha, self.review_files)
+		local n_viewed = #vim.tbl_filter(function(f)
+			return self:is_viewed(f.path)
+		end, self.review_files)
+		local title = "Agent Review: " .. self.label .. (mode == "hunks" and " (hunks)" or "")
+		if n_viewed > 0 then
+			title = title .. (" (%d/%d viewed)"):format(n_viewed, #self.review_files)
+		end
+		if self.hidden_tests > 0 then
+			title = title .. (" (%d test file%s hidden)"):format(self.hidden_tests, self.hidden_tests == 1 and "" or "s")
+		end
+		what = {
+			title = title,
+			items = changes.qf_items(self.root, list, mode, resolve, n_viewed > 0 and function(path)
+				return self:is_viewed(path)
+			end or nil),
+			context = { agent_review = true },
+		}
 	end
-	if self.hidden_tests > 0 then
-		title = title .. (" (%d test file%s hidden)"):format(self.hidden_tests, self.hidden_tests == 1 and "" or "s")
-	end
-	local what = {
-		title = title,
-		items = changes.qf_items(self.root, list, mode, resolve, n_viewed > 0 and function(path)
-			return self:is_viewed(path)
-		end or nil),
-		context = { agent_review = true },
-	}
 	if self:qf_list_alive() then
 		-- 印を付けた時などにquickfix窓のカーソルが選択位置へ飛ばないよう、置き換え後に戻す。
 		local qf_win = vim.fn.getqflist({ id = self.qf_id, winid = 0 }).winid
@@ -451,6 +460,9 @@ function Session:sync()
 		highlight.apply(self.right_win, "work")
 		self:map_work_buffer(buf)
 		self.current_rel = rel
+		if self.pr then
+			require("agent-review.pr.threads").annotate(self)
+		end
 	end)
 	self.syncing = false
 	if not ok then
@@ -542,6 +554,26 @@ function Session:redirect_from_left()
 		api.nvim_set_current_win(self.right_win)
 	end
 	self:sync()
+end
+
+---右窓に開かれたbaseのバッファを左へ移し、右には同じファイルの作業ツリー側を出す。
+function Session:redirect_base_from_right()
+	if not self:valid() then
+		return
+	end
+	local buf = api.nvim_win_get_buf(self.right_win)
+	local rel = vim.b[buf].agent_review_path
+	if vim.b[buf].agent_review_side ~= "base" or not rel then
+		return
+	end
+	local line = api.nvim_win_get_cursor(self.right_win)[1]
+	self:show(rel)
+	if api.nvim_win_get_buf(self.left_win) == buf then
+		pcall(api.nvim_win_set_cursor, self.left_win, { line, 0 })
+		api.nvim_win_call(self.left_win, function()
+			vim.cmd("normal! zz")
+		end)
+	end
 end
 
 -- 既存のバッファローカルマッピングを退避してから上書きし、終了時に戻す。
@@ -670,6 +702,14 @@ function Session:attach_autocmds()
 			end
 			if self:valid() and api.nvim_get_current_win() == self.right_win then
 				local buf = api.nvim_win_get_buf(self.right_win)
+				if vim.b[buf].agent_review_side == "base" and vim.b[buf].agent_review_path and not self.syncing then
+					-- quickfixから比較元側のコメントへ飛ぶと、baseのバッファが右窓に開く。
+					-- 開いた側がカーソルを置いてから、右に作業ツリー側・左にbaseを並べ直す。
+					vim.schedule(function()
+						self:redirect_base_from_right()
+					end)
+					return
+				end
 				if buf ~= self.synced_buf or self.current_rel == nil then
 					self.synced_buf = buf
 					self:sync()
@@ -839,6 +879,8 @@ function Session:foreign_windows(skip_buf)
 			and buf ~= skip_buf
 			and api.nvim_win_get_config(win).relative == ""
 			and info.quickfix == 0
+			-- agent-review自身の窓（PRの会話など）はレビューと一緒に閉じる。
+			and not api.nvim_buf_get_name(buf):match("^agent%-review://")
 		then
 			table.insert(out, {
 				buf = buf,
@@ -872,6 +914,9 @@ function Session:close()
 	self.closed = true
 	self:unwatch()
 	pcall(api.nvim_del_augroup_by_id, self.augroup)
+	if self.pr then
+		require("agent-review.pr.threads").clear_all()
+	end
 	local claude = require("agent-review.claude")
 	local claude_visible = claude.terminal_visible_in(self.tab)
 

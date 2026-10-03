@@ -41,9 +41,9 @@ cmd("AgentReviewQuickfix", function(o)
 end, {
 	nargs = "?",
 	complete = function()
-		return { "files", "hunks" }
+		return { "files", "hunks", "comments" }
 	end,
-	desc = "Send changed files (or hunks) to the quickfix list",
+	desc = "Send changed files, hunks or PR review comments to the quickfix list",
 })
 cmd("AgentReviewPR", function(o)
 	require("agent-review").pr_list(o.args ~= "" and o.args or nil)
@@ -56,6 +56,9 @@ end, {
 	end,
 	desc = "List GitHub pull requests (a preset from pr.presets), or review PR <number>",
 })
+cmd("AgentReviewPRConversation", function()
+	require("agent-review").pr_conversation()
+end, { desc = "Show the pull request's description, reviews and comments" })
 cmd("AgentReviewPRClean", function()
 	require("agent-review.pr.open").clean()
 end, { desc = "Remove checked-out pull requests that are not being reviewed" })

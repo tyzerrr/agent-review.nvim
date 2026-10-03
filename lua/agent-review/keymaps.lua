@@ -94,6 +94,20 @@ M.actions = {
 		end,
 		plug = "qf-open",
 	},
+	pr_thread = {
+		desc = "PR: comments on this line",
+		fn = function()
+			ar().pr_thread()
+		end,
+		plug = "pr-thread",
+	},
+	pr_conversation = {
+		desc = "PR: conversation",
+		fn = function()
+			ar().pr_conversation()
+		end,
+		plug = "pr-conversation",
+	},
 	toggle_viewed = {
 		desc = "Toggle viewed (reviewed) mark",
 		fn = function()
