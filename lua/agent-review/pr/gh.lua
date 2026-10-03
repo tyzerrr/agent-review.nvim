@@ -64,9 +64,15 @@ function M.json(args, cb)
 end
 
 ---@param cb fun(err: AgentReviewGhError|nil, data: any)
-function M.graphql(query, variables, cb)
+---@param opts? { hostname?: string } GitHub Enterprise のホスト
+function M.graphql(query, variables, cb, opts)
 	local body = vim.json.encode({ query = query, variables = vim.tbl_isempty(variables or {}) and vim.empty_dict() or variables })
-	M.run({ "api", "graphql", "--input", "-" }, { stdin = body }, function(err, out)
+	local args = { "api", "graphql", "--input", "-" }
+	local host = (opts or {}).hostname
+	if host and host ~= "github.com" then
+		vim.list_extend(args, { "--hostname", host })
+	end
+	M.run(args, { stdin = body }, function(err, out)
 		local data, perr = decode(out)
 		-- GraphQLのエラーは本文の errors に入り、gh の終了コードだけでは中身がわからない。
 		if data and data.errors and data.errors[1] then
