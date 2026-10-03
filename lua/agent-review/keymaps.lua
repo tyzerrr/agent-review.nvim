@@ -87,6 +87,13 @@ M.actions = {
 		end,
 		plug = "qf-open",
 	},
+	toggle_viewed = {
+		desc = "Toggle viewed (reviewed) mark",
+		fn = function()
+			return ar().toggle_viewed()
+		end,
+		plug = "toggle-viewed",
+	},
 	refresh = {
 		desc = "Refresh review",
 		fn = function()

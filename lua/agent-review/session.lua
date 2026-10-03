@@ -3,6 +3,8 @@ local config = require("agent-review.config")
 local git = require("agent-review.git")
 local highlight = require("agent-review.highlight")
 local keymaps = require("agent-review.keymaps")
+local testfiles = require("agent-review.testfiles")
+local viewed = require("agent-review.viewed")
 
 local api = vim.api
 
@@ -11,8 +13,9 @@ local SCHEME = "agent-review://"
 ---@class AgentReviewSession
 ---@field root string
 ---@field base string ユーザーが指定したrev
----@field base_sha string 開いた時点で固定したコミット。レビュー中にHEADが動いても比較元を変えない。
----@field files AgentReviewFile[]
+---@field base_sha string 比較元のコミット。auto_refresh.follow_base ならbaseが指す先に追従する。
+---@field files AgentReviewFile[] baseとの差分がある全ファイル（gdで開いたテストのdiffにも使う）
+---@field review_files AgentReviewFile[] レビュー対象（tests.hide ならテストを除く）。quickfix・]f・ピッカーが使う
 ---@field tab integer
 ---@field left_win integer
 ---@field right_win integer
@@ -27,6 +30,11 @@ function Session.new(root, base, base_sha)
 	self.short_sha = base_sha:sub(1, 8)
 	self.files = {}
 	self.file_index = {}
+	self.review_files = {}
+	self.review_index = {}
+	self.hidden_tests = 0
+	self.viewed_path = viewed.path(root)
+	self.viewed = viewed.load(self.viewed_path)
 	self.base_bufs = {} -- rel -> buf
 	self.deleted_bufs = {} -- rel -> buf
 	self.saved_maps = {} -- buf -> { lhs -> maparg }
@@ -52,15 +60,68 @@ local function signature(files)
 end
 
 function Session:refresh_files()
-	local before = signature(self.files)
+	local before = signature(self.review_files) .. self:viewed_signature()
 	self.files = git.changed_files(self.root, self.base_sha)
 	self.file_index = {}
 	for i, f in ipairs(self.files) do
 		self.file_index[f.path] = i
 	end
-	if self.qf_id and signature(self.files) ~= before then
+	self.review_files, self.hidden_tests = testfiles.filter(self.files)
+	self.review_index = {}
+	for i, f in ipairs(self.review_files) do
+		self.review_index[f.path] = i
+	end
+	self:prune_viewed()
+	if self.qf_id and signature(self.review_files) .. self:viewed_signature() ~= before then
 		self:update_quickfix()
 	end
+end
+
+---@return boolean
+function Session:in_review(rel)
+	return rel ~= nil and self.review_index[rel] ~= nil
+end
+
+function Session:viewed_signature()
+	local keys = vim.tbl_keys(self.viewed)
+	table.sort(keys)
+	return table.concat(keys, "\0")
+end
+
+---内容が変わったファイルと、一覧から消えたファイルの印を外す。
+function Session:prune_viewed()
+	local rels = vim.tbl_keys(self.viewed)
+	if #rels == 0 then
+		return
+	end
+	local now = viewed.fingerprints(self.root, rels)
+	local changed = false
+	for _, rel in ipairs(rels) do
+		if not self:file(rel) or now[rel] ~= self.viewed[rel] then
+			self.viewed[rel] = nil
+			changed = true
+		end
+	end
+	if changed then
+		viewed.save(self.viewed_path, self.viewed)
+	end
+end
+
+function Session:is_viewed(rel)
+	return rel ~= nil and self.viewed[rel] ~= nil
+end
+
+function Session:toggle_viewed(rel)
+	if self.viewed[rel] then
+		self.viewed[rel] = nil
+	else
+		self.viewed[rel] = viewed.fingerprints(self.root, { rel })[rel]
+	end
+	viewed.save(self.viewed_path, self.viewed)
+	if self.qf_id then
+		self:update_quickfix()
+	end
+	self:sync()
 end
 
 function Session:qf_list_alive()
@@ -79,13 +140,28 @@ function Session:update_quickfix(mode, opts)
 				end
 			end
 		or nil
-	local list = changes.collect(self.root, self.base_sha, self.files)
+	local list = changes.collect(self.root, self.base_sha, self.review_files)
+	local n_viewed = #vim.tbl_filter(function(f)
+		return self:is_viewed(f.path)
+	end, self.review_files)
+	local title = "Agent Review: " .. self.base .. (mode == "hunks" and " (hunks)" or "")
+	if n_viewed > 0 then
+		title = title .. (" (%d/%d viewed)"):format(n_viewed, #self.review_files)
+	end
+	if self.hidden_tests > 0 then
+		title = title .. (" (%d test file%s hidden)"):format(self.hidden_tests, self.hidden_tests == 1 and "" or "s")
+	end
 	local what = {
-		title = "Agent Review: " .. self.base .. (mode == "hunks" and " (hunks)" or ""),
-		items = changes.qf_items(self.root, list, mode, resolve),
+		title = title,
+		items = changes.qf_items(self.root, list, mode, resolve, n_viewed > 0 and function(path)
+			return self:is_viewed(path)
+		end or nil),
 		context = { agent_review = true },
 	}
 	if self:qf_list_alive() then
+		-- 印を付けた時などにquickfix窓のカーソルが選択位置へ飛ばないよう、置き換え後に戻す。
+		local qf_win = vim.fn.getqflist({ id = self.qf_id, winid = 0 }).winid
+		local qf_cursor = qf_win ~= 0 and api.nvim_win_get_cursor(qf_win) or nil
 		-- "r"で置き換えると選択位置が先頭に戻るため、同じファイル（hunksなら同じ行も）の項目を選び直す。
 		local old = vim.fn.getqflist({ id = self.qf_id, idx = 0, items = 1 })
 		local cur = old.items[old.idx]
@@ -108,6 +184,9 @@ function Session:update_quickfix(mode, opts)
 			if new_idx then
 				vim.fn.setqflist({}, "a", { id = self.qf_id, idx = new_idx })
 			end
+		end
+		if qf_cursor and api.nvim_win_is_valid(qf_win) then
+			pcall(api.nvim_win_set_cursor, qf_win, qf_cursor)
 		end
 	else
 		vim.fn.setqflist({}, " ", what)
@@ -294,14 +373,19 @@ function Session:update_winbar(rel, base_note, empty)
 	elseif rel then
 		local f = self:file(rel)
 		local base_rel = f and f.old_path or rel
-		local pos = self.file_index[rel] and ("[%d/%d] "):format(self.file_index[rel], #self.files) or ""
+		local pos = self.review_index[rel] and ("[%d/%d] "):format(self.review_index[rel], #self.review_files) or ""
 		local status = f and (f.status .. " ") or ""
 		left = ("%%#AgentReviewWinbarBase# BASE %%* %s  %s%s"):format(
 			winbar_escape(self.base),
 			winbar_escape(base_rel),
 			base_note and ("  (" .. base_note .. ")") or ""
 		)
-		right = ("%%#AgentReviewWinbarWork# WORKING %%* %s%s%s"):format(pos, status, winbar_escape(rel))
+		right = ("%%#AgentReviewWinbarWork# WORKING %%* %s%s%s%s"):format(
+			pos,
+			status,
+			winbar_escape(rel),
+			self:is_viewed(rel) and "  ✓ viewed" or ""
+		)
 	else
 		left = "%#AgentReviewWinbarBase# BASE %* (not compared)"
 		right = "%#AgentReviewWinbarWork# WORKING %* "
@@ -394,7 +478,7 @@ function Session:show_qf_selection()
 		local info = vim.fn.getqflist({ id = self.qf_id, idx = 0, items = 1 })
 		item = info.items[info.idx]
 	end
-	local rel = item and self:rel_path(item.bufnr) or self.files[1].path
+	local rel = item and self:rel_path(item.bufnr) or self.review_files[1].path
 	self:show(rel)
 	if item then
 		pcall(api.nvim_win_set_cursor, self.right_win, { math.max(item.lnum, 1), 0 })
@@ -403,19 +487,19 @@ end
 
 function Session:step(delta)
 	self:refresh_files()
-	local n = #self.files
+	local n = #self.review_files
 	if n == 0 then
 		vim.notify("[agent-review] no changed files", vim.log.levels.INFO)
 		return
 	end
-	local idx = self.current_rel and self.file_index[self.current_rel]
+	local idx = self.current_rel and self.review_index[self.current_rel]
 	local next_idx
 	if idx then
 		next_idx = (idx - 1 + delta) % n + 1
 	else
 		next_idx = delta > 0 and 1 or n
 	end
-	self:show(self.files[next_idx].path)
+	self:show(self.review_files[next_idx].path)
 end
 
 function Session:pick()

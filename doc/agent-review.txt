@@ -76,8 +76,9 @@ Defaults:
           <leader>dl  files           <leader>dh  hunks
   review  ]f          next_file       [f          prev_file
           ]q          qf_next         [q          qf_prev
+          <leader>dv  toggle_viewed
   base    q           close           <C-l> (x)   send_to_claude
-  quickfix <CR>      qf_open
+  quickfix <CR>      qf_open         <Tab>       toggle_viewed
 
 "review" keys are buffer-local on both review windows; "base" keys only on
 the base window; "quickfix" keys only on the quickfix window in the review
@@ -101,6 +102,7 @@ Actions and their <Plug> mappings:
   qf_next          <Plug>(agent-review-qf-next)
   qf_prev          <Plug>(agent-review-qf-prev)
   qf_open          <Plug>(agent-review-qf-open)
+  toggle_viewed    <Plug>(agent-review-toggle-viewed)
   refresh          <Plug>(agent-review-refresh)
   quickfix_files   <Plug>(agent-review-quickfix-files)
   quickfix_hunks   <Plug>(agent-review-quickfix-hunks)
@@ -119,15 +121,16 @@ Actions and their <Plug> mappings:
     winbar = true,
     picker = "auto",            -- "auto" | "telescope" | "ui_select"
     quickfix = { auto = true, open = true, height = 8, mode = "files" },
+    tests = { hide = false, patterns = nil, extra_patterns = {} },
     auto_refresh = { enabled = true, debounce = 200,    -- or false
                      follow_base = true },
     keymaps = {
       global = { toggle = "<leader>dr", open_rev = "<leader>dR",
                  files = "<leader>dl", hunks = "<leader>dh" },
       review = { next_file = "]f", prev_file = "[f",
-                 qf_next = "]q", qf_prev = "[q" },
+                 qf_next = "]q", qf_prev = "[q", toggle_viewed = "<leader>dv" },
       base = { close = "q", send_to_claude = "<C-l>" },
-      quickfix = { qf_open = "<CR>" },
+      quickfix = { qf_open = "<CR>", toggle_viewed = "<Tab>" },
     },
     claude = { focus_after_send = true, terminal_pattern = "claude",
                follow_terminal = true },
@@ -166,6 +169,21 @@ In the review windows and the quickfix window, `]q` and `[q` wrap around at
 the ends of the list and accept a count. Refreshing keeps the current entry
 selected.
 
+                                                         *agent-review-viewed*
+Mark files as reviewed with <Tab> in the quickfix window (the line under the
+cursor) or <leader>dv in the diff windows. Marked files show a "✓" in
+quickfix, the title shows "(3/8 viewed)" and the winbar "✓ viewed". The mark
+remembers the file's content and goes away when the file changes again.
+Marks are stored in `.git/agent-review/viewed.json`.
+
+                                                          *agent-review-tests*
+With `tests.hide = true`, test files are left out of quickfix, ]f/[f, the
+pickers and the winbar count. Built-in patterns follow Go, JS/TS, Python, Lua
+and Rust conventions (`*_test.go`, `*.test.ts`, `*.spec.tsx`, `__tests__/`,
+`test_*.py`, `conftest.py`, `*_spec.lua`, `spec/`, `tests/`, ...).
+`tests.patterns` replaces them and `tests.extra_patterns` adds to them; both
+are Lua patterns matched against "/" .. (path relative to the root).
+
 Telescope extension:
 >vim
   :Telescope agent_review          " changed files
@@ -201,6 +219,7 @@ terminals) are reopened in the tab you return to when the review closes.
   ar.files()      ar.hunks()
   ar.quickfix("files" | "hunks")
   ar.qf_next()    ar.qf_prev()
+  ar.toggle_viewed()
   ar.refresh()
 <
                                     *AgentReviewOpen* *AgentReviewClose*
