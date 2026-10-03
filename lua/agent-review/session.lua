@@ -660,12 +660,18 @@ function Session:watch()
 		-- commit等で比較元が動いたかだけを（書き込みの無いrev-parseで）確かめる。
 		schedule_refresh(not (filename and (filename == ".git" or filename:sub(1, 5) == ".git/")))
 	end)
-	-- worktreeではcommitで動くrefが作業フォルダの外にあるため、そちらも監視する。
-	local common = git.common_dir(self.root)
-	if common and common:sub(1, #self.root + 1) ~= self.root .. "/" then
-		watch_dir(common, function()
-			schedule_refresh(false)
-		end)
+	-- commit・reset・checkoutで比較元が動いたことに気づくため、gitディレクトリも直接監視する。
+	-- Linuxは直下しか見られず作業フォルダの監視では.git内の変更が届かないが、
+	-- これらの操作では必ずgitディレクトリ直下のindex・HEAD・ORIG_HEAD等が書き換わる。
+	-- worktreeではrefが作業フォルダの外の共通ディレクトリにあるので、そちらも監視する。
+	local seen = {}
+	for _, dir in ipairs({ git.git_dir(self.root), git.common_dir(self.root) }) do
+		if dir and not seen[dir] then
+			seen[dir] = true
+			watch_dir(dir, function()
+				schedule_refresh(false)
+			end)
+		end
 	end
 	-- BufEnterはsync()自身が発火させるのでrefreshが止まらなくなる。ここには含めない。
 	api.nvim_create_autocmd({ "FocusGained", "TermLeave" }, { group = self.augroup, callback = schedule_refresh })
