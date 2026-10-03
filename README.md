@@ -111,6 +111,7 @@ When a branch name like `HEAD` moves to another commit (you or the agent commit,
 | global | `<leader>dR` | Type `:AgentReview ` so you can enter a revision |
 | global | `<leader>dl` | Changed files picker |
 | global | `<leader>dh` | Changed hunks picker |
+| global | `<leader>dp` | GitHub pull requests (`:AgentReviewPR`) |
 | review (both sides) | `]f` / `[f` | Next / previous changed file |
 | review (both sides + quickfix) | `]q` / `[q` | Next / previous quickfix entry, wrapping around at the ends |
 | base side | `q` | Close the review |
@@ -181,6 +182,7 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `close` | `<Plug>(agent-review-close)` | Close the review |
 | `files` | `<Plug>(agent-review-files)` | Changed files picker |
 | `hunks` | `<Plug>(agent-review-hunks)` | Changed hunks picker |
+| `pr_list` | `<Plug>(agent-review-pr-list)` | GitHub pull requests |
 | `next_file` | `<Plug>(agent-review-next-file)` | Next changed file |
 | `prev_file` | `<Plug>(agent-review-prev-file)` | Previous changed file |
 | `qf_next` | `<Plug>(agent-review-qf-next)` | Next quickfix entry; after the last one, go back to the first |
@@ -202,6 +204,7 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `:AgentReviewToggle [rev]` | Toggle the review |
 | `:AgentReviewClose` | Close the review tab |
 | `:AgentReviewFiles` | Pick a changed file |
+| `:AgentReviewPR [preset]` | List GitHub pull requests (the default lists, or a preset from `pr.presets`) |
 | `:AgentReviewHunks` | Pick a changed hunk |
 | `:AgentReviewQuickfix [files\|hunks]` | Rebuild the quickfix list and open it |
 | `:AgentReviewRefresh` | Reload the changed files and buffers now (normally done for you, see `auto_refresh`) |
@@ -248,6 +251,39 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 - **Terminal follows the review**: claudecode.nvim treats a terminal shown in another tab as visible, so toggling it from the review tab would hide it there instead. When a review opens, a visible Claude terminal moves into the review tab, and it goes back to its original tab when the review closes. A Claude terminal you opened inside the review tab stays open too: it moves to the tab you came from.
 - **Other windows are kept**: any window you opened in the review tab that isn't part of the review (help, another file, another agent's terminal) is reopened in the tab you return to, so closing the review only closes the diff.
 - **Balanced layout**: opening, closing or resizing the Claude terminal re-balances the two diff windows. Resizing the diff windows yourself is left alone.
+
+## Pull requests (in progress)
+
+Reviewing other people's pull requests is being built in phases. Today you can **list** them:
+
+- `:AgentReviewPR` (or `<leader>dp`) lists the pull requests of the repository you opened Neovim in. It uses the `origin` remote (`pr.remote`) and needs the [GitHub CLI](https://cli.github.com) (`gh auth login`).
+- By default you see open PRs **you opened** plus open PRs where **you or one of your teams** is asked to review.
+- Each line shows the number, title, author, draft/merged/closed, review state, CI, `+added -removed`, the number of files and how long ago it was updated. The preview shows the description.
+- Picking a PR opens it in the browser for now. Opening its diff in the review layout comes next.
+
+You describe the lists with plain keys instead of GitHub's search syntax:
+
+```lua
+require("agent-review").setup({
+  pr = {
+    -- each entry is one search; the results are merged without duplicates
+    lists = {
+      { author = "@me" },
+      { reviewer = "@me" },           -- includes requests to your teams
+    },
+    state = "open",                   -- "open" | "closed" | "merged" | "all"
+    presets = {                       -- :AgentReviewPR <name>
+      team = { { reviewer = "@me", draft = false, base = "main" } },
+      bugs = { { label = { "bug", "regression" } } },
+      urgent = "is:open label:urgent", -- a raw GitHub query also works
+    },
+  },
+})
+```
+
+Keys: `author`, `reviewer`, `assignee`, `involves`, `mentions`, `label` (string or list), `base`, `head`, `draft` (`true`/`false`) and `state` (overrides the shared one).
+
+All the searches go to GitHub in **one** GraphQL request. Results are cached under the state directory: reopening within `pr.list_ttl` seconds (60 by default) makes no request at all; after that the cached list shows immediately and is replaced when the fresh one arrives.
 
 ## Viewed marks
 
@@ -329,6 +365,16 @@ require("agent-review").setup({
     review = { next_file = "]f", prev_file = "[f", qf_next = "]q", qf_prev = "[q", toggle_viewed = "<leader>dv" },
     base = { close = "q", send_to_claude = "<C-l>" },
     quickfix = { qf_open = "<CR>", toggle_viewed = "<Tab>" }, -- only in the review tab's quickfix window
+  },
+  pr = {
+    gh = "gh",            -- GitHub CLI
+    state_dir = nil,      -- default: $XDG_STATE_HOME/agent-review or ~/.local/state/agent-review
+    remote = "origin",    -- the remote whose GitHub repository has the PRs ("upstream" for forks)
+    lists = { { author = "@me" }, { reviewer = "@me" } },
+    state = "open",
+    presets = {},
+    list_ttl = 60,        -- seconds a cached PR list is used without asking GitHub
+    limit = 50,           -- PRs per search
   },
   claude = {
     focus_after_send = true,     -- jump into the Claude terminal after <C-l>

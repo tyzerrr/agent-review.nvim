@@ -5,7 +5,7 @@ local config = require("agent-review.config")
 local M = {}
 
 ---@return string|nil host, string|nil path "owner/repo"
-local function parse(url)
+function M.parse(url)
 	url = vim.trim(url or "")
 	local host, path = url:match("^%a[%w+.-]*://([^/]+)/(.+)$")
 	if host then
@@ -31,7 +31,7 @@ end
 
 ---@return string|nil "github.com/owner/repo"
 function M.repo_key(url)
-	local host, path = parse(url)
+	local host, path = M.parse(url)
 	return host and (host .. "/" .. path) or nil
 end
 

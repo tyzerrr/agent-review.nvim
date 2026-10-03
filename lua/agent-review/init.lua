@@ -225,6 +225,12 @@ function M.toggle_viewed()
 	s:toggle_viewed(rel)
 end
 
+---GitHubのPR一覧を開く。
+---@param preset? string pr.presets の名前。nil なら pr.lists
+function M.pr_list(preset)
+	require("agent-review.pr.picker").pick(preset)
+end
+
 function M.files()
 	require("agent-review.picker").pick()
 end

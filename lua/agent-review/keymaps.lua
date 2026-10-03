@@ -31,6 +31,13 @@ M.actions = {
 		plug = "open",
 	},
 	open_rev = { desc = "Open review against a revision", rhs = ":AgentReview " },
+	pr_list = {
+		desc = "Pull requests",
+		fn = function()
+			ar().pr_list()
+		end,
+		plug = "pr-list",
+	},
 	close = {
 		desc = "Close review",
 		fn = function()

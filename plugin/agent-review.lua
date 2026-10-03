@@ -45,6 +45,17 @@ end, {
 	end,
 	desc = "Send changed files (or hunks) to the quickfix list",
 })
+cmd("AgentReviewPR", function(o)
+	require("agent-review").pr_list(o.args ~= "" and o.args or nil)
+end, {
+	nargs = "?",
+	complete = function(arglead)
+		return vim.tbl_filter(function(n)
+			return vim.startswith(n, arglead)
+		end, require("agent-review.pr.list").preset_names())
+	end,
+	desc = "List GitHub pull requests (optionally a preset from pr.presets)",
+})
 cmd("AgentReviewRefresh", function()
 	require("agent-review").refresh()
 end, { desc = "Reload changed files and diff" })

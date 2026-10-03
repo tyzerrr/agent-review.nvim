@@ -44,6 +44,23 @@ M.defaults = {
 		gh = "gh",
 		-- PRのコード・キャッシュ・下書きの置き場所。nil なら $XDG_STATE_HOME/agent-review（無ければ ~/.local/state/agent-review）。
 		state_dir = nil,
+		-- PRを探すGitHubリポジトリを決めるgitのリモート。forkで作業しているなら "upstream" 等にする。
+		remote = "origin",
+		-- :AgentReviewPR で出す一覧。各要素が1つの検索で、結果をまとめて（重複を除いて）表示する。
+		-- 使えるキー: author / reviewer（チーム経由の依頼も含む）/ assignee / involves / mentions /
+		-- label（文字列か配列）/ base / head / draft（true|false）/ state（下の state を上書き）
+		lists = {
+			{ author = "@me" },
+			{ reviewer = "@me" },
+		},
+		-- 全リストに共通のPRの状態: "open" | "closed" | "merged" | "all"
+		state = "open",
+		-- :AgentReviewPR <名前> で使う一覧。値は lists と同じ形の配列か、GitHubの検索クエリの文字列。
+		presets = {},
+		-- この秒数以内に開き直した一覧はGitHubに問い合わせずキャッシュを使う。
+		list_ttl = 60,
+		-- 1つの検索で取得するPRの最大数。
+		limit = 50,
 	},
 	-- エージェントがファイルを書き換えたら自動でrefreshする。false で無効。
 	auto_refresh = {
@@ -64,6 +81,7 @@ M.defaults = {
 			open_rev = "<leader>dR",
 			files = "<leader>dl",
 			hunks = "<leader>dh",
+			pr_list = "<leader>dp",
 		},
 		-- レビュータブ内の左右両方のバッファに設定されるキー
 		review = {
@@ -109,6 +127,10 @@ function M.setup(opts)
 		-- 旧形式（keymaps.next_file 等）を先に正規化してからデフォルトと合わせる。
 		local user = require("agent-review.keymaps").normalize(opts.keymaps)
 		merged.keymaps = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.keymaps), user)
+	end
+	-- 配列は番号ごとに混ざってしまうので、ユーザーが書いた lists はデフォルトを丸ごと置き換える。
+	if type(opts.pr) == "table" and opts.pr.lists then
+		merged.pr.lists = vim.deepcopy(opts.pr.lists)
 	end
 	M.options = merged
 	return M.options
