@@ -319,6 +319,15 @@ function M.open_conversation(s)
 		"",
 		("_%d review thread%s, %d unresolved (`:AgentReviewQuickfix comments`)_"):format(#(pr.threads or {}), #(pr.threads or {}) == 1 and "" or "s", open),
 	})
+	local checks = pr.checks
+	if checks and #checks.items > 0 then
+		vim.list_extend(lines, { "", "## Checks", "" })
+		for _, c in ipairs(checks.items) do
+			local mark = (c.state == "SUCCESS" or c.state == "NEUTRAL" or c.state == "SKIPPED") and "✓"
+				or ((c.state == "FAILURE" or c.state == "ERROR" or c.state == "TIMED_OUT" or c.state == "CANCELLED" or c.state == "ACTION_REQUIRED") and "✗" or "…")
+			table.insert(lines, ("- %s %s%s"):format(mark, c.name, c.url and ("  <%s>"):format(c.url) or ""))
+		end
+	end
 	for _, item in ipairs(conv.timeline) do
 		local verb = item.kind == "review" and (REVIEW_STATES[item.state] or "reviewed") or "commented"
 		vim.list_extend(lines, { "", "---", "", ("**@%s** %s · %s"):format(item.author, verb, ago(item.at)) })

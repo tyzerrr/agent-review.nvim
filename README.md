@@ -278,6 +278,12 @@ Review anyone's pull request in the same layout: the PR's code on the right with
 - `:AgentReviewQuickfix comments` lists every thread: unresolved first, then outdated (comments on an older commit, which aren't placed on lines, like on GitHub), then resolved. `<CR>` on a comment about a removed line opens the file with the base side scrolled to that line.
 - All of it comes from **one** GraphQL request per PR (more only past 100 threads). `:AgentReviewRefresh` asks again only when the PR changed: the PR's ETag check comes back 304 otherwise, which is free.
 
+### Viewed and CI
+
+- Viewed marks (`<leader>dv`, `<Tab>` in quickfix) follow GitHub's per-file "Viewed" checkbox: files you marked on github.com show as viewed in Neovim, and files that changed since you viewed them don't. Marks you toggle in Neovim are sent in one request with `:AgentReviewPRSubmit` or when you close the review, not one call per toggle.
+- The base winbar shows the CI state of the PR's head (`✓ CI`, `✗ CI failed`, `… CI running`), and the PR conversation lists every check with its link.
+- Both come with the comments request, so they cost no extra API call.
+
 ### Writing a review
 
 Everything you write is a **draft** first, kept per PR under the state directory (it survives closing Neovim), and goes to GitHub in **one request** when you submit:

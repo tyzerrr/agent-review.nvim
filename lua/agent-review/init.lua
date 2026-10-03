@@ -132,6 +132,10 @@ end
 function M.close()
 	local s = M._session
 	M._session = nil
+	if s and not s.closed and s.pr then
+		-- Viewed の付け外しは1つずつ送らず、閉じる時にまとめて送る。
+		require("agent-review.pr.review").flush_viewed(s)
+	end
 	if s and not s.closed then
 		s:close()
 		emit("AgentReviewClose", s)
@@ -223,6 +227,9 @@ function M.toggle_viewed()
 		return notify("not a changed file", vim.log.levels.WARN)
 	end
 	s:toggle_viewed(rel)
+	if s.pr then
+		require("agent-review.pr.review").queue_viewed(s, rel, s:is_viewed(rel))
+	end
 end
 
 local function with_pr(fn)

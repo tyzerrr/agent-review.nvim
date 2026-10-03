@@ -210,6 +210,10 @@ base side); <leader>dc opens the threads on the cursor line, <leader>dC the
 whole conversation, and `:AgentReviewQuickfix comments` lists every thread.
 Comments are fetched again on refresh only when the PR changed.
 
+Viewed marks follow GitHub's per-file "Viewed" state; toggles are sent in
+one request on submit or when the review closes. The base winbar shows the
+CI state and the conversation lists every check.
+
 Writing is done as drafts kept under the state directory: <leader>da
 comments on the cursor line (or the visual selection), `r` / `R` in the
 thread window draft a reply / toggle resolving. |:AgentReviewPRSubmit|

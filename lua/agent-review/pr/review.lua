@@ -141,9 +141,12 @@ local EVENTS = { approve = "APPROVE", request_changes = "REQUEST_CHANGES", comme
 ---@param d AgentReviewDraft
 local function build(s, d, event, body)
 	local decls, fields, vars, parts = {}, {}, {}, {}
+	if event or next(d.viewed or {}) then
+		table.insert(decls, "$prId: ID!")
+		vars.prId = s.pr.pr_id
+	end
 	if event then
 		vim.list_extend(decls, {
-			"$prId: ID!",
 			"$commit: GitObjectID!",
 			"$event: PullRequestReviewEvent!",
 			"$body: String",
@@ -153,7 +156,6 @@ local function build(s, d, event, body)
 			fields,
 			"review: addPullRequestReview(input: {pullRequestId: $prId, commitOID: $commit, event: $event, body: $body, threads: $threads}) { pullRequestReview { id url } }"
 		)
-		vars.prId = s.pr.pr_id
 		vars.commit = s.pr.head
 		vars.event = event
 		vars.body = body
@@ -186,13 +188,29 @@ local function build(s, d, event, body)
 		vars[alias] = thread_id
 		parts[alias] = { kind = "resolve", thread_id = thread_id }
 	end
+	local v = 0
+	for path, on in pairs(d.viewed or {}) do
+		v = v + 1
+		local alias = "viewed" .. v
+		table.insert(decls, ("$%s: String!"):format(alias))
+		table.insert(
+			fields,
+			("%s: %s(input: {pullRequestId: $prId, path: $%s}) { clientMutationId }"):format(alias, on and "markFileAsViewed" or "unmarkFileAsViewed", alias)
+		)
+		vars[alias] = path
+		parts[alias] = { kind = "viewed", path = path }
+	end
 	return ("mutation(%s) { %s }"):format(table.concat(decls, ", "), table.concat(fields, " ")), vars, parts
 end
 
-local function send(s, event, body)
+---@param only_viewed? boolean 閉じる時など、Viewed の付け外しだけを送る
+local function send(s, event, body, only_viewed)
 	local repo, n = s.pr.repo, s.pr.meta.number
 	local d = draft.load(repo, n)
-	if event and not s.pr.pr_id then
+	if only_viewed then
+		d = { comments = {}, replies = {}, resolve = {}, summary = "", viewed = d.viewed }
+	end
+	if (event or next(d.viewed)) and not s.pr.pr_id then
 		return notify("PR details are still loading; try again in a moment", vim.log.levels.WARN)
 	end
 	local query, vars, parts = build(s, d, event, body)
@@ -211,6 +229,8 @@ local function send(s, event, body)
 				if part.kind == "review" then
 					current.comments = {}
 					current.summary = ""
+				elseif part.kind == "viewed" then
+					current.viewed[part.path] = nil
 				elseif part.kind == "reply" then
 					current.replies = vim.tbl_filter(function(r)
 						return r.thread_id ~= part.thread_id
@@ -272,5 +292,47 @@ function M.submit(s, name)
 end
 
 M.EVENT_NAMES = { "approve", "request_changes", "comment" }
+
+---Viewed の付け外しを下書きに積む（GitHubへは submit か、レビューを閉じる時にまとめて送る）。
+function M.queue_viewed(s, rel, on)
+	local repo, n = s.pr.repo, s.pr.meta.number
+	local d = draft.load(repo, n)
+	if s.pr.remote_viewed and (s.pr.remote_viewed[rel] == "VIEWED") == on then
+		-- GitHubの状態に戻っただけなら送る必要はない。
+		d.viewed[rel] = nil
+	else
+		d.viewed[rel] = on
+	end
+	draft.save(repo, n, d)
+end
+
+---積んである Viewed の付け外しだけを送る。
+function M.flush_viewed(s)
+	if not (s.pr and s.pr.pr_id) then
+		return
+	end
+	if next(draft.load(s.pr.repo, s.pr.meta.number).viewed) then
+		send(s, nil, nil, true)
+	end
+end
+
+---GitHubの Viewed の状態を手元の印に反映する。送っていない手元の変更があれば、そちらを優先する。
+---@param remote table<string, string> path -> VIEWED|UNVIEWED|DISMISSED
+function M.apply_remote_viewed(s, remote)
+	s.pr.remote_viewed = remote
+	local pending = draft.load(s.pr.repo, s.pr.meta.number).viewed
+	local changed = false
+	for _, f in ipairs(s.files) do
+		local want = remote[f.path] == "VIEWED"
+		if pending[f.path] ~= nil then
+			want = pending[f.path]
+		end
+		if want ~= s:is_viewed(f.path) then
+			s:set_viewed(f.path, want)
+			changed = true
+		end
+	end
+	return changed
+end
 
 return M
