@@ -262,6 +262,10 @@ internal/service/user.go|3 col 1| modified  +16 -3
 
 ## プルリクエスト
 
+[![PRレビューのデモ](assets/demo-pr.jpg)](assets/demo-pr.mp4)
+
+<sub>▶ 画像をクリックするとPRレビューのデモ動画が再生されます（64秒、mp4）。PRを選ぶ → スレッドを読む → 返信 → LSPで移動 → コメント → Viewed → 会話を読む → Approve までを、1回のリクエストで送ります。GitHubの代わりにローカルの仕組み（`scripts/demo/setup-pr.sh`）を使って録画しています。</sub>
+
 誰のプルリクエストでも同じレイアウトでレビューできます。右側にPRのコード（言語サーバー付き）、左側にベース、quickfixに変更されたファイル一覧、そしてレビューコメントがそれぞれの行の上に表示されます。さらに、あなた自身のレビュー（コメント、返信、解決、承認）を1回のリクエストでGitHubに送信できます。
 
 - `:AgentReviewPR 123`（または一覧から選択）でPR #123のレビューを開きます。
@@ -271,7 +275,7 @@ internal/service/user.go|3 col 1| modified  +16 -3
 
 ### レビューコメント
 
-- コメントが付いた行には、サインと行末に1行の要約が表示されます: `💬 bob: Why 2?  (+1)`。各作成者には常に同じ色が割り当てられます。削除行に対するコメントはベース（左）側に表示されます。解決済みのスレッドは薄く表示されます（`✓ resolved`）。
+- コメントが付いた行には、サインと、GitHubと同じく行のすぐ下に1行の要約が表示されます: `💬 bob: Why 2?  (+1)`。diffの反対側にも同じ数の空行が入るので、左右の並びはずれません。各作成者には常に同じ色が割り当てられます。削除行に対するコメントはベース（左）側に表示されます。解決済みのスレッドは薄く表示されます（`✓ resolved`）。
 - `<leader>dc`でカーソル行上のすべてのスレッドをフローティングウィンドウ（markdown、`q`で閉じる）で開きます。
 - そのウィンドウで`c`を押すと、スレッドを**Claude Code**に渡せます。会話はmarkdownファイルに書き出され、コメント対象の行とともに`@mentions`として送信されます。PRのブランチがあなたのworktreeのいずれかにチェックアウトされている場合、メンションはそのファイルを指すため、Claudeは実際のブランチを修正します。
 - `<leader>dC` / `:AgentReviewPRConversation`で、説明文、レビュー（approved / requested changes）、コメントを時系列で表示します。
@@ -531,6 +535,7 @@ vim.api.nvim_create_autocmd("User", {
 make test                                   # all tests (mini.test, headless; clones test deps into ./deps)
 make test-file FILE=tests/test_session.lua  # a single file
 nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record assets/demo.mp4
+nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh scripts/demo/demo-pr.tape assets/demo-pr.mp4  # PRレビューのデモ
 ```
 
 テストは一時ディレクトリに作られた実際のgitリポジトリに対して実行されます。外部プラグイン（claudecode.nvim）のみがスタブ化されています。

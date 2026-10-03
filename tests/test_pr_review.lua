@@ -155,7 +155,7 @@ local function marks(side)
 		local buf = vim.api.nvim_win_get_buf(side == "left" and s.left_win or s.right_win)
 		local out = {}
 		for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, require("agent-review.pr.threads").ns, 0, -1, { details = true })) do
-			table.insert(out, { line = m[2] + 1, text = table.concat(vim.tbl_map(function(c) return c[1] end, m[4].virt_text or {}), "") })
+			table.insert(out, { line = m[2] + 1, text = table.concat(vim.tbl_map(function(c) return c[1] end, (m[4].virt_lines or {})[1] or {}), "") })
 		end
 		return out
 	]],

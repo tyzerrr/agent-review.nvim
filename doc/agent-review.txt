@@ -205,8 +205,8 @@ is computed locally from fetched commits; only the PR's metadata comes from
 the API (with an ETag). |:AgentReviewRefresh| picks up new pushes.
 
 Review comments are fetched with one GraphQL request. Commented lines get a
-sign and a summary at the end of the line (comments on removed lines on the
-base side); <leader>dc opens the threads on the cursor line, <leader>dC the
+sign and a summary line right below them (comments on removed lines on the
+base side; the other side gets blank lines so the diff stays aligned); <leader>dc opens the threads on the cursor line, <leader>dC the
 whole conversation, and `:AgentReviewQuickfix comments` lists every thread.
 Comments are fetched again on refresh only when the PR changed.
 

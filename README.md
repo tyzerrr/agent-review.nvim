@@ -265,6 +265,10 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 
 ## Pull requests
 
+[![PR review demo](assets/demo-pr.jpg)](assets/demo-pr.mp4)
+
+<sub>▶ Click the image to watch the PR review demo (64s, mp4): pick a PR, read the threads, reply, jump with LSP, comment, mark Viewed, read the conversation and approve, all in one request. Recorded against a local stand-in for GitHub (`scripts/demo/setup-pr.sh`).</sub>
+
 Review anyone's pull request in the same layout: the PR's code on the right with your language server, the base on the left, every changed file in quickfix, the review comments right on the lines they belong to, and your own review: comments, replies, resolves and approval, sent to GitHub in one request.
 
 - `:AgentReviewPR 123` (or pick one from the list) opens PR #123 for review.
@@ -274,7 +278,7 @@ Review anyone's pull request in the same layout: the PR's code on the right with
 
 ### Review comments
 
-- Commented lines get a sign and a one-line summary at the end of the line: `💬 bob: Why 2?  (+1)`. Each author always gets the same color. Comments on removed lines show on the base (left) side. Resolved threads are dimmed (`✓ resolved`).
+- Commented lines get a sign and, like on GitHub, a one-line summary right below the line: `💬 bob: Why 2?  (+1)`. The other side of the diff gets matching blank lines, so both sides stay aligned. Each author always gets the same color. Comments on removed lines show on the base (left) side. Resolved threads are dimmed (`✓ resolved`).
 - `<leader>dc` opens every thread on the cursor line in a floating window (markdown, `q` to close).
 - `c` in that window hands the thread to **Claude Code**: the conversation is written to a markdown file and sent together with the commented lines as `@mentions`. If the PR's branch is checked out in one of your worktrees, the mention points at that file, so Claude fixes the real branch.
 - `<leader>dC` / `:AgentReviewPRConversation` shows the description, reviews (approved / requested changes) and comments in time order.
@@ -534,6 +538,7 @@ Set `quickfix = { open = false }` to only fill the list, or `quickfix = { auto =
 make test                                   # all tests (mini.test, headless; clones test deps into ./deps)
 make test-file FILE=tests/test_session.lua  # a single file
 nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record assets/demo.mp4
+nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh scripts/demo/demo-pr.tape assets/demo-pr.mp4  # the PR review demo
 ```
 
 Tests run against real git repositories in temp directories. Only external plugins (claudecode.nvim) are stubbed.
