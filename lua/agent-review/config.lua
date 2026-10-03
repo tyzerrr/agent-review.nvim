@@ -30,6 +30,14 @@ M.defaults = {
 		-- "files": 1ファイル1行 / "hunks": 変更箇所ごとに1行
 		mode = "files",
 	},
+	tests = {
+		-- true: テストファイルをquickfix・]f・ピッカーから外し、実装だけをレビューする。
+		hide = false,
+		-- テストファイルとみなすパスのLuaパターン（"/" を先頭に付けたroot相対パスに照合）。
+		-- nil なら組み込み（Go/JS/TS/Python/Lua/Rust の慣例）。extra_patterns は組み込みに追加する。
+		patterns = nil,
+		extra_patterns = {},
+	},
 	-- エージェントがファイルを書き換えたら自動でrefreshする。false で無効。
 	auto_refresh = {
 		enabled = true,
@@ -56,6 +64,7 @@ M.defaults = {
 			prev_file = "[f",
 			qf_next = "]q",
 			qf_prev = "[q",
+			toggle_viewed = "<leader>dv",
 		},
 		-- base側（左）のバッファだけに設定されるキー。
 		-- 作業ツリー側にqを置かないのはマクロ記録と衝突するため。
@@ -67,6 +76,7 @@ M.defaults = {
 		-- agent-reviewのリスト以外では、グローバルの割り当てや標準の動きに任せる。
 		quickfix = {
 			qf_open = "<CR>",
+			toggle_viewed = "<Tab>",
 		},
 	},
 	claude = {

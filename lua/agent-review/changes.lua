@@ -105,9 +105,12 @@ end
 
 ---@param mode "files"|"hunks"
 ---@param resolve_bufnr? fun(file: AgentReviewFile): integer|nil 実ファイルが無い（削除）エントリの表示先
-function M.qf_items(root, list, mode, resolve_bufnr)
+---@param is_viewed? fun(path: string): boolean 渡された時だけ、行頭にレビュー済みの印を付ける
+function M.qf_items(root, list, mode, resolve_bufnr, is_viewed)
 	local items = {}
 	for _, c in ipairs(list) do
+		-- 印の有無で列がずれないよう、印の無い行にも同じ幅の空白を入れる。
+		local mark = is_viewed and (is_viewed(c.file.path) and "✓ " or "  ") or ""
 		local entry = { filename = root .. "/" .. c.file.path }
 		local bufnr = resolve_bufnr and resolve_bufnr(c.file)
 		if bufnr then
@@ -121,12 +124,13 @@ function M.qf_items(root, list, mode, resolve_bufnr)
 					vim.tbl_extend("force", entry, {
 						lnum = math.max(h.work_start, 1),
 						col = 1,
-						text = ("[%s] -%d +%d  %s"):format(c.file.status, h.base_count, h.work_count, hunk_text(c, h)),
+						text = mark
+							.. ("[%s] -%d +%d  %s"):format(c.file.status, h.base_count, h.work_count, hunk_text(c, h)),
 					})
 				)
 			end
 		else
-			table.insert(items, vim.tbl_extend("force", entry, { lnum = c.lnum, col = 1, text = M.describe(c) }))
+			table.insert(items, vim.tbl_extend("force", entry, { lnum = c.lnum, col = 1, text = mark .. M.describe(c) }))
 		end
 	end
 	return items

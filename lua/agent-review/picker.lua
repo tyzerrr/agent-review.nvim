@@ -9,14 +9,14 @@ local function context()
 	local s = ar._session
 	if s and s:valid() then
 		s:refresh_files()
-		return { root = s.root, base = s.base, base_sha = s.base_sha }, s.files
+		return { root = s.root, base = s.base, base_sha = s.base_sha }, s.review_files
 	end
 	local ctx, err = ar.resolve()
 	if not ctx then
 		vim.notify("[agent-review] " .. err, vim.log.levels.ERROR)
 		return nil
 	end
-	return ctx, git.changed_files(ctx.root, ctx.base_sha)
+	return ctx, (require("agent-review.testfiles").filter(git.changed_files(ctx.root, ctx.base_sha)))
 end
 
 ---@class AgentReviewPickerItem

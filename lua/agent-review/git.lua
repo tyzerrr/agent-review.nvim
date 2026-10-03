@@ -42,6 +42,27 @@ function M.common_dir(root)
 	return ok and vim.fn.resolve(vim.trim(out)) or nil
 end
 
+---作業ツリーのファイル内容のハッシュ。存在しないファイルはnil。
+---@param rels string[] root相対パス
+---@return table<string, string>
+function M.hash_files(root, rels)
+	local present = vim.tbl_filter(function(rel)
+		return vim.uv.fs_stat(root .. "/" .. rel) ~= nil
+	end, rels)
+	if #present == 0 then
+		return {}
+	end
+	local ok, out = run(root, vim.list_extend({ "hash-object", "--" }, present))
+	if not ok then
+		return {}
+	end
+	local hashes = {}
+	for i, h in ipairs(split_lines(out)) do
+		hashes[present[i]] = h
+	end
+	return hashes
+end
+
 ---@return string|nil sha
 function M.resolve_rev(root, rev)
 	local ok, out = run(root, { "rev-parse", "--verify", "--quiet", rev .. "^{commit}" })

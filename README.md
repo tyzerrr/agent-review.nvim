@@ -48,6 +48,8 @@ how the new code fits into the rest of the codebase. If you open the file normal
 - 🎨 **VSCode-style colors**: removed lines are red and added lines are green, with stronger color on the changed characters (`inline:char`, `linematch`)
 - 🌳 **Syntax highlighting on both sides**: tree-sitter on the base side too, with no LSP diagnostics there
 - 📋 **Quickfix integration**: every changed file (or every hunk) goes into a quickfix list, so `]q` walks the whole review and wraps around at either end
+- ✅ **Viewed marks**: mark files as reviewed, like GitHub's "Viewed" checkbox. The mark clears itself when the agent changes the file again
+- 🧪 **Implementation-only review**: optionally leave test files (Go, JS/TS, Python, Lua, Rust conventions) out of the review
 - 🔄 **Auto refresh**: when the agent edits, creates or reverts files, the file list, quickfix, buffers and diff update by themselves, so you don't need to reopen the review
 - 🔭 **Telescope pickers**: changed files and changed hunks, with a syntax-highlighted inline diff preview
 - 🧹 **Handles every git status**: modified, added, untracked, deleted, renamed (diffed against the old path), gitignored and outside-repo files
@@ -113,6 +115,8 @@ When a branch name like `HEAD` moves to another commit (you or the agent commit,
 | review (both sides + quickfix) | `]q` / `[q` | Next / previous quickfix entry, wrapping around at the ends |
 | base side | `q` | Close the review |
 | base side, visual | `<C-l>` | Send the selection to Claude Code |
+| review (both sides) | `<leader>dv` | Mark the shown file as viewed / not viewed |
+| quickfix window | `<Tab>` | Mark the file under the cursor as viewed / not viewed |
 | quickfix window | `<CR>` | Open the entry under the cursor in the review (even if another plugin maps `<CR>` globally) |
 
 Built-in diff motions also work: `]c` / `[c` (next / previous hunk).
@@ -181,6 +185,7 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `prev_file` | `<Plug>(agent-review-prev-file)` | Previous changed file |
 | `qf_next` | `<Plug>(agent-review-qf-next)` | Next quickfix entry; after the last one, go back to the first |
 | `qf_prev` | `<Plug>(agent-review-qf-prev)` | Previous quickfix entry; before the first one, go to the last |
+| `toggle_viewed` | `<Plug>(agent-review-toggle-viewed)` | Mark the file as viewed / not viewed (quickfix: the line under the cursor) |
 | `qf_open` | `<Plug>(agent-review-qf-open)` | Open the review quickfix entry under the cursor in the working window |
 | `refresh` | `<Plug>(agent-review-refresh)` | Reload the changed files and the diff |
 | `quickfix_files` | `<Plug>(agent-review-quickfix-files)` | Quickfix: one entry per file |
@@ -244,6 +249,37 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 - **Other windows are kept**: any window you opened in the review tab that isn't part of the review (help, another file, another agent's terminal) is reopened in the tab you return to, so closing the review only closes the diff.
 - **Balanced layout**: opening, closing or resizing the Claude terminal re-balances the two diff windows. Resizing the diff windows yourself is left alone.
 
+## Viewed marks
+
+Like the "Viewed" checkbox on a GitHub pull request, you can mark each file as reviewed:
+
+- `<Tab>` in the quickfix window toggles the file under the cursor; `<leader>dv` in the diff windows toggles the file on screen.
+- Marked files get a `✓` in quickfix (every hunk of the file in hunks mode), the quickfix title shows the progress (`Agent Review: HEAD (3/8 viewed)`), and the winbar says `✓ viewed`.
+- The mark remembers the file's content. When the agent changes the file again, the mark goes away, so you only re-read what changed.
+- Marks are saved in `.git/agent-review/viewed.json` (per worktree) and survive closing and reopening the review.
+
+## Reviewing implementation only
+
+Most of the time you want to read what the agent built, not every test it wrote. Set `tests.hide = true` to leave test files out of quickfix, `]f`/`[f`, the pickers and the `[i/n]` count. The quickfix title shows how many were left out (`(4 test files hidden)`). A test file you open yourself (for example with `gd`) still gets its diff.
+
+Built-in patterns:
+
+| Language | Test files |
+| --- | --- |
+| Go | `*_test.go`, `testdata/` |
+| JS / TS | `*.test.{js,jsx,ts,tsx,mjs,cjs,mts,cts}`, `*.spec.*` (same extensions), `__tests__/` |
+| Python | `test_*.py`, `*_test.py`, `conftest.py`, `tests/` |
+| Lua | `*_spec.lua`, `*_test.lua`, `test_*.lua`, `spec/`, `tests/` |
+| Rust | `tests/` (integration tests), `*_test.rs`, `tests.rs` |
+
+Unit tests inside the same file (Rust's `#[cfg(test)] mod tests`) can't be told apart per file and stay in the review. Patterns are Lua patterns matched against `"/" .. path` (the path relative to the repository root), so `"^/e2e/"` matches a top-level `e2e` directory:
+
+```lua
+require("agent-review").setup({
+  tests = { hide = true, extra_patterns = { "^/e2e/", "%.stories%.tsx$" } },
+})
+```
+
 ## Auto refresh
 
 While a review is open, the repository is watched for file changes (`.git/` is ignored). When the agent writes files, the review refreshes after a short debounce:
@@ -278,6 +314,11 @@ require("agent-review").setup({
     height = 8,
     mode = "files",       -- "files" | "hunks"
   },
+  tests = {
+    hide = false,         -- true: leave test files out of quickfix, ]f/[f and the pickers
+    patterns = nil,       -- replace the built-in test file patterns (Lua patterns)
+    extra_patterns = {},  -- add to the built-in patterns
+  },
   auto_refresh = {        -- false to disable
     enabled = true,
     debounce = 200,       -- ms to wait so a burst of writes refreshes once
@@ -285,9 +326,9 @@ require("agent-review").setup({
   },
   keymaps = {
     global = { toggle = "<leader>dr", open_rev = "<leader>dR", files = "<leader>dl", hunks = "<leader>dh" },
-    review = { next_file = "]f", prev_file = "[f", qf_next = "]q", qf_prev = "[q" },
+    review = { next_file = "]f", prev_file = "[f", qf_next = "]q", qf_prev = "[q", toggle_viewed = "<leader>dv" },
     base = { close = "q", send_to_claude = "<C-l>" },
-    quickfix = { qf_open = "<CR>" }, -- only in the review tab's quickfix window
+    quickfix = { qf_open = "<CR>", toggle_viewed = "<Tab>" }, -- only in the review tab's quickfix window
   },
   claude = {
     focus_after_send = true,     -- jump into the Claude terminal after <C-l>
@@ -334,6 +375,7 @@ ar.next_file() / ar.prev_file()
 ar.files() / ar.hunks()     -- pickers
 ar.quickfix("files" | "hunks")
 ar.qf_next() / ar.qf_prev() -- quickfix, wrapping around
+ar.toggle_viewed()          -- mark the file as viewed / not viewed
 ar.refresh()
 ```
 

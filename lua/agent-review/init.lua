@@ -97,14 +97,15 @@ function M.open(base, opts)
 	local Session = require("agent-review.session")
 	s = Session.new(ctx.root, ctx.base, ctx.base_sha)
 	s:refresh_files()
-	if #s.files == 0 then
+	if #s.review_files == 0 then
 		pcall(api.nvim_del_augroup_by_id, s.augroup)
-		return notify("no changes against " .. ctx.base)
+		local hidden = s.hidden_tests > 0 and (" (%d test files hidden)"):format(s.hidden_tests) or ""
+		return notify("no changes against " .. ctx.base .. hidden)
 	end
 
 	local initial = opts.path or s:rel_path(api.nvim_get_current_buf())
 	if not (initial and (opts.path or s:file(initial))) then
-		initial = s.files[1].path
+		initial = s.review_files[1].path
 	end
 	M._session = s
 	s:open(initial)
@@ -200,6 +201,30 @@ function M.qf_open()
 	vim.cmd.cc(idx)
 end
 
+---レビュー済みの印を切り替える。quickfix窓ならカーソル行のファイル、diffの窓なら表示中のファイル。
+---@return false|nil 別のquickfixリストの上ならfalseを返し、本来のキーに任せる
+function M.toggle_viewed()
+	local s = active()
+	if not s then
+		return notify("no active review session", vim.log.levels.WARN)
+	end
+	local info = vim.fn.getwininfo(api.nvim_get_current_win())[1]
+	local rel
+	if info.quickfix == 1 then
+		if info.loclist == 1 or vim.fn.getqflist({ id = 0 }).id ~= s.qf_id then
+			return false
+		end
+		local item = vim.fn.getqflist()[vim.fn.line(".")]
+		rel = item and s:rel_path(item.bufnr)
+	else
+		rel = s.current_rel
+	end
+	if not (rel and s:file(rel)) then
+		return notify("not a changed file", vim.log.levels.WARN)
+	end
+	s:toggle_viewed(rel)
+end
+
 function M.files()
 	require("agent-review.picker").pick()
 end
@@ -222,7 +247,7 @@ end)
 
 M.refresh = with_session(function(s)
 	-- LSPジャンプ等で一覧外のファイルを見ている時は動かさない。一覧から消えた時だけ移る。
-	local was_listed = s.current_rel ~= nil and s:file(s.current_rel) ~= nil
+	local was_listed = s:in_review(s.current_rel)
 	local was_empty = s:showing_empty()
 	s:follow_base()
 	s:refresh_files()
@@ -230,8 +255,8 @@ M.refresh = with_session(function(s)
 		s:update_quickfix()
 	end
 	vim.cmd("checktime")
-	local dropped = was_listed and not s:file(s.current_rel)
-	if #s.files == 0 then
+	local dropped = was_listed and not s:in_review(s.current_rel)
+	if #s.review_files == 0 then
 		-- 見ていたファイルがcommitされて何も残らない時は、古い内容を見せ続けないよう左右とも空にする。
 		if dropped then
 			s:show_empty()
@@ -248,7 +273,7 @@ M.refresh = with_session(function(s)
 		vim.cmd("diffupdate")
 	end
 	-- 全部commitした時に一度だけ知らせる（自動refreshのたびに出さない）。
-	local empty = #s.files == 0
+	local empty = #s.review_files == 0
 	if empty and not s.notified_empty then
 		notify("no changes against " .. s.base)
 	end
