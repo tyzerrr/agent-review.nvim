@@ -58,6 +58,7 @@ function H.github_fixture(number)
 	local work = H.make_repo({
 		["app.go"] = { "package app", "func A() int { return 1 }" },
 		["util.go"] = { "package app", "func U() int { return 1 }" },
+		["long.go"] = { "package app", "", "// L3", "// L4", "// L5", "// L6", "// L7", "// L8", "// L9", "// L10", "// L11", "// L12", "// L13", "// L14", "// L15" },
 		["gone.go"] = { "package legacy", "", "// Deprecated helpers removed by the PR.", "func Old() string { return \"old\" }" },
 	})
 	run(work, { "git", "remote", "add", "origin", origin })
@@ -67,6 +68,7 @@ function H.github_fixture(number)
 	run(work, { "git", "switch", "-q", "-c", "feature" })
 	H.write(work, "app.go", { "package app", "func A() int { return 2 }" })
 	H.write(work, "new.go", { "package app", "func N() {}" })
+	H.write(work, "long.go", { "package app", "// changed", "// L3", "// L4", "// L5", "// L6", "// L7", "// L8", "// L9", "// L10", "// L11", "// L12", "// L13", "// L14", "// L15" })
 	vim.fn.delete(work .. "/gone.go")
 	run(work, { "git", "add", "-A" })
 	run(work, { "git", "commit", "-q", "-m", "feature" })

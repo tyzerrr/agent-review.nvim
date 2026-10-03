@@ -247,7 +247,27 @@ M.pr_thread = with_pr(function(s)
 	if #found == 0 then
 		return notify("no comments on this line")
 	end
-	require("agent-review.pr.threads").open_float(found)
+	require("agent-review.pr.threads").open_float(found, s)
+end)
+
+---カーソル行（ビジュアル選択なら範囲）にレビューコメントの下書きを書く。
+M.pr_comment = with_pr(function(s)
+	local win = api.nvim_get_current_win()
+	if win ~= s.left_win and win ~= s.right_win then
+		return notify("move to the diff windows to comment", vim.log.levels.WARN)
+	end
+	local l1, l2 = vim.fn.line("."), vim.fn.line(".")
+	if vim.fn.mode():match("^[vV\22]") then
+		l1 = vim.fn.line("v")
+		api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
+	end
+	require("agent-review.pr.review").comment(s, win, l1, l2)
+end)
+
+---下書き（コメント・返信・解決）をまとめて送る。
+---@param event? "approve"|"request_changes"|"comment"
+M.pr_submit = with_pr(function(s, event)
+	require("agent-review.pr.review").submit(s, event)
 end)
 
 ---PRの説明・レビュー・コメントを時系列で開く。
@@ -358,7 +378,7 @@ function M.open_pr_session(repo, meta, checkout)
 	s.pr = { repo = repo, meta = meta, head = checkout.head }
 	local cached = require("agent-review.pr.comments").cached(repo, meta.number)
 	if cached then
-		s.pr.threads, s.pr.conversation = cached.threads, cached.conversation
+		s.pr.threads, s.pr.conversation, s.pr.pr_id = cached.threads, cached.conversation, cached.pr_id
 	end
 	s:refresh_files()
 	if #s.review_files == 0 then

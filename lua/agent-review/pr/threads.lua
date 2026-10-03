@@ -42,14 +42,35 @@ function M.for_file(threads, rel, side)
 	end, threads or {})
 end
 
-local function place(buf, threads)
+local function draft_of(s)
+	return require("agent-review.pr.draft").load(s.pr.repo, s.pr.meta.number)
+end
+
+---@param d AgentReviewDraft
+local function place(buf, threads, drafts, d)
 	api.nvim_buf_clear_namespace(buf, ns, 0, -1)
 	local last = api.nvim_buf_line_count(buf)
 	local opts = config.options.pr or {}
+	local replied = {}
+	for _, r in ipairs(d.replies) do
+		replied[r.thread_id] = true
+	end
 	for _, t in ipairs(threads) do
 		local author, text = M.summary(t)
 		local hl = t.resolved and "AgentReviewCommentResolved" or "AgentReviewComment"
+		local pending = ""
+		if replied[t.id] then
+			pending = pending .. "  📝 draft reply"
+		end
+		if d.resolve[t.id] == true then
+			pending = pending .. "  (will resolve)"
+		elseif d.resolve[t.id] == false then
+			pending = pending .. "  (will unresolve)"
+		end
 		local chunks = { { "  " .. (t.resolved and "✓ resolved  " or "💬 "), hl }, { author, t.resolved and hl or M.author_hl(author) }, { ": " .. text, hl } }
+		if pending ~= "" then
+			table.insert(chunks, { pending, "AgentReviewDraft" })
+		end
 		pcall(api.nvim_buf_set_extmark, buf, ns, math.min(t.line, last) - 1, 0, {
 			sign_text = t.resolved and (opts.resolved_sign or "✓") or (opts.comment_sign or "💬"),
 			sign_hl_group = hl,
@@ -58,6 +79,21 @@ local function place(buf, threads)
 			hl_mode = "combine",
 		})
 	end
+	for _, c in ipairs(drafts) do
+		pcall(api.nvim_buf_set_extmark, buf, ns, math.min(c.line, last) - 1, 0, {
+			sign_text = opts.draft_sign or "📝",
+			sign_hl_group = "AgentReviewDraft",
+			virt_text = { { "  📝 draft: " .. first_line(c.body, 60), "AgentReviewDraft" } },
+			virt_text_pos = "eol",
+			hl_mode = "combine",
+		})
+	end
+end
+
+local function drafts_for(d, rel, side)
+	return vim.tbl_filter(function(c)
+		return c.path == rel and c.side == side
+	end, d.comments)
 end
 
 ---表示中の左右のバッファに、そのファイルのスレッドを置き直す。
@@ -67,11 +103,12 @@ function M.annotate(s)
 		return
 	end
 	local rel = s.current_rel
+	local d = draft_of(s)
 	local right = api.nvim_win_get_buf(s.right_win)
 	local left = api.nvim_win_get_buf(s.left_win)
-	place(right, rel and M.for_file(s.pr.threads, rel, "RIGHT") or {})
+	place(right, rel and M.for_file(s.pr.threads, rel, "RIGHT") or {}, rel and drafts_for(d, rel, "RIGHT") or {}, d)
 	if vim.b[left].agent_review_side == "base" then
-		place(left, rel and M.for_file(s.pr.threads, rel, "LEFT") or {})
+		place(left, rel and M.for_file(s.pr.threads, rel, "LEFT") or {}, rel and drafts_for(d, rel, "LEFT") or {}, d)
 	end
 end
 
@@ -99,13 +136,20 @@ local function ago(iso)
 end
 
 ---スレッドを markdown にする。誰の発言かの見出し（@login）には後で色を付ける。
-local function thread_lines(threads)
-	local lines, authors = {}, {}
+---@param d? AgentReviewDraft 下書きの返信・解決も並べて見せる
+---@return string[] lines, table authors, { first: integer, thread: AgentReviewThread }[] ranges
+local function thread_lines(threads, d)
+	local lines, authors, ranges = {}, {}, {}
 	for i, t in ipairs(threads) do
 		if i > 1 then
 			vim.list_extend(lines, { "", "---", "" })
 		end
-		table.insert(lines, ("### %s:%d%s"):format(t.path, t.line or t.original_line or 0, t.resolved and "  (resolved)" or ""))
+		local state = t.resolved and "  (resolved)" or ""
+		if d and d.resolve[t.id] ~= nil then
+			state = state .. (d.resolve[t.id] and "  (will resolve)" or "  (will unresolve)")
+		end
+		table.insert(lines, ("### %s:%d%s"):format(t.path, t.line or t.original_line or 0, state))
+		table.insert(ranges, { first = #lines, thread = t })
 		for _, c in ipairs(t.comments) do
 			table.insert(lines, "")
 			table.insert(lines, ("**@%s** · %s"):format(c.author, ago(c.created_at)))
@@ -113,8 +157,14 @@ local function thread_lines(threads)
 			table.insert(lines, "")
 			vim.list_extend(lines, vim.split(c.body, "\r?\n"))
 		end
+		for _, r in ipairs(d and d.replies or {}) do
+			if r.thread_id == t.id then
+				vim.list_extend(lines, { "", "**📝 draft reply**", "" })
+				vim.list_extend(lines, vim.split(r.body, "\r?\n"))
+			end
+		end
 	end
-	return lines, authors
+	return lines, authors, ranges
 end
 
 local function color_authors(buf, authors)
@@ -129,14 +179,22 @@ local function color_authors(buf, authors)
 end
 
 ---@param threads AgentReviewThread[]
-function M.open_float(threads)
-	local lines, authors = thread_lines(threads)
+---@param s? AgentReviewSession 渡すと r（返信）/ R（解決の切り替え）が使える
+function M.open_float(threads, s)
+	local d = s and draft_of(s) or nil
+	local lines, authors, ranges = thread_lines(threads, d)
 	local buf = api.nvim_create_buf(false, true)
-	api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	local function render()
+		lines, authors, ranges = thread_lines(threads, s and draft_of(s) or nil)
+		vim.bo[buf].modifiable = true
+		api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+		vim.bo[buf].modifiable = false
+		api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+		color_authors(buf, authors)
+	end
 	vim.bo[buf].filetype = "markdown"
-	vim.bo[buf].modifiable = false
 	vim.bo[buf].bufhidden = "wipe"
-	color_authors(buf, authors)
+	render()
 	local width = math.min(100, vim.o.columns - 6)
 	local height = math.max(3, math.min(#lines, math.floor(vim.o.lines * 0.6)))
 	local win = api.nvim_open_win(buf, true, {
@@ -156,6 +214,28 @@ function M.open_float(threads)
 			pcall(api.nvim_win_close, win, true)
 		end, { buffer = buf, nowait = true })
 	end
+	if s then
+		-- カーソルが乗っているスレッド（見出しより下で最も近いもの）を対象にする。
+		local function current()
+			local row = api.nvim_win_get_cursor(win)[1]
+			local found = ranges[1] and ranges[1].thread
+			for _, r in ipairs(ranges) do
+				if r.first <= row then
+					found = r.thread
+				end
+			end
+			return found
+		end
+		vim.keymap.set("n", "r", function()
+			local t = current()
+			pcall(api.nvim_win_close, win, true)
+			require("agent-review.pr.review").reply(s, t)
+		end, { buffer = buf, nowait = true, desc = "Reply (draft)" })
+		vim.keymap.set("n", "R", function()
+			require("agent-review.pr.review").toggle_resolve(s, current())
+			render()
+		end, { buffer = buf, nowait = true, desc = "Toggle resolve (draft)" })
+	end
 	return win
 end
 
@@ -166,7 +246,21 @@ local function order(t)
 	return t.outdated and 2 or 1
 end
 
----comments モードの quickfix の項目。未解決→outdated→解決済みの順。
+local function locate(s, item, path, side)
+	if side == "LEFT" then
+		-- 比較元側のスレッドは base のバッファを指す。右窓に開かれたら左右を入れ替えて表示する。
+		item.bufnr = s:base_buffer(path)
+		item.module = path
+	elseif vim.uv.fs_stat(s.root .. "/" .. path) then
+		item.filename = s.root .. "/" .. path
+	else
+		item.bufnr = s:deleted_buffer(path)
+		item.module = path
+	end
+	return item.bufnr or item.filename
+end
+
+---comments モードの quickfix の項目。下書き→未解決→outdated→解決済みの順。
 ---@param s AgentReviewSession
 function M.qf_items(s)
 	local threads = vim.deepcopy(s.pr.threads or {})
@@ -180,21 +274,18 @@ function M.qf_items(s)
 		return (a.line or a.original_line or 0) < (b.line or b.original_line or 0)
 	end)
 	local items = {}
+	local d = draft_of(s)
+	for _, c in ipairs(d.comments) do
+		local item = { lnum = c.line, col = 1, text = "[draft] you: " .. first_line(c.body, 60) }
+		if locate(s, item, c.path, c.side) then
+			table.insert(items, item)
+		end
+	end
 	for _, t in ipairs(threads) do
 		local author, text = M.summary(t)
 		local tag = t.resolved and "[resolved] " or (t.outdated and "[outdated] " or "")
 		local item = { lnum = t.line or t.original_line or 1, col = 1, text = ("%s%s: %s"):format(tag, author, text) }
-		if t.side == "LEFT" then
-			-- 比較元側のスレッドは base のバッファを指す。右窓に開かれたら左右を入れ替えて表示する。
-			item.bufnr = s:base_buffer(t.path)
-			item.module = t.path
-		elseif vim.uv.fs_stat(s.root .. "/" .. t.path) then
-			item.filename = s.root .. "/" .. t.path
-		else
-			item.bufnr = s:deleted_buffer(t.path)
-			item.module = t.path
-		end
-		if item.bufnr or item.filename then
+		if locate(s, item, t.path, t.side) then
 			table.insert(items, item)
 		end
 	end

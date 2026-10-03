@@ -60,7 +60,7 @@ function M.load_comments(s)
 		if s.closed then
 			return
 		end
-		pr.threads, pr.conversation = data.threads, data.conversation
+		pr.threads, pr.conversation, pr.pr_id = data.threads, data.conversation, data.pr_id
 		require("agent-review.pr.threads").annotate(s)
 		if s.qf_mode == "comments" and s.qf_id then
 			s:update_quickfix()

@@ -56,6 +56,15 @@ end, {
 	end,
 	desc = "List GitHub pull requests (a preset from pr.presets), or review PR <number>",
 })
+cmd("AgentReviewPRSubmit", function(o)
+	require("agent-review").pr_submit(o.args ~= "" and o.args or nil)
+end, {
+	nargs = "?",
+	complete = function()
+		return { "approve", "request_changes", "comment" }
+	end,
+	desc = "Send the drafted review comments, replies and resolves in one request (optionally approving)",
+})
 cmd("AgentReviewPRConversation", function()
 	require("agent-review").pr_conversation()
 end, { desc = "Show the pull request's description, reviews and comments" })
