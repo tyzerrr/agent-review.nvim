@@ -206,6 +206,8 @@ function M.open_float(threads, s)
 		style = "minimal",
 		border = "rounded",
 		title = (" %d comment%s "):format(#threads, #threads == 1 and "" or "s"),
+		footer = s and " r reply · R resolve · c Claude · q close " or " q close ",
+		footer_pos = "right",
 	})
 	vim.wo[win].wrap = true
 	vim.wo[win].conceallevel = 2
@@ -231,6 +233,11 @@ function M.open_float(threads, s)
 			pcall(api.nvim_win_close, win, true)
 			require("agent-review.pr.review").reply(s, t)
 		end, { buffer = buf, nowait = true, desc = "Reply (draft)" })
+		vim.keymap.set("n", "c", function()
+			local t = current()
+			pcall(api.nvim_win_close, win, true)
+			require("agent-review.pr.handoff").send_thread(s, t)
+		end, { buffer = buf, nowait = true, desc = "Send to Claude Code" })
 		vim.keymap.set("n", "R", function()
 			require("agent-review.pr.review").toggle_resolve(s, current())
 			render()

@@ -65,6 +65,34 @@ function M.send(session, buf, line1, line2)
 	return true
 end
 
+---いくつかのファイル（行範囲は任意）をまとめて @mention で送る。
+---@param mentions { path: string, l1?: integer, l2?: integer }[] 行は1始まり
+function M.send_mentions(mentions)
+	local ok, claudecode = pcall(require, "claudecode")
+	if not ok then
+		vim.notify("[agent-review] claudecode.nvim is not available", vim.log.levels.WARN)
+		return false
+	end
+	for _, m in ipairs(mentions) do
+		-- claudecode.nvimの行番号は0-indexed。
+		local sent, err = claudecode.send_at_mention(m.path, m.l1 and (m.l1 - 1), m.l2 and (m.l2 - 1), "agent-review")
+		if not sent then
+			vim.notify("[agent-review] " .. tostring(err), vim.log.levels.ERROR)
+			return false
+		end
+	end
+	if config.options.claude.focus_after_send then
+		vim.schedule(function()
+			local win = find_terminal_win()
+			if win then
+				api.nvim_set_current_win(win)
+				vim.cmd("startinsert")
+			end
+		end)
+	end
+	return true
+end
+
 function M.send_visual(session)
 	local l1, l2 = vim.fn.line("v"), vim.fn.line(".")
 	if l1 > l2 then
