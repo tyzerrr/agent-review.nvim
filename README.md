@@ -2,6 +2,8 @@
 
 # agent-review.nvim
 
+English | [日本語](README.ja.md)
+
 **Review what your AI agent wrote with a side-by-side diff where LSP still works,<br>and the base side follows you wherever you jump.**
 
 [![test](https://github.com/tyzerrr/agent-review.nvim/actions/workflows/test.yml/badge.svg)](https://github.com/tyzerrr/agent-review.nvim/actions/workflows/test.yml)
