@@ -274,6 +274,7 @@ Review anyone's pull request in the same layout: the PR's code on the right with
 
 - Commented lines get a sign and a one-line summary at the end of the line: `💬 bob: Why 2?  (+1)`. Each author always gets the same color. Comments on removed lines show on the base (left) side. Resolved threads are dimmed (`✓ resolved`).
 - `<leader>dc` opens every thread on the cursor line in a floating window (markdown, `q` to close).
+- `c` in that window hands the thread to **Claude Code**: the conversation is written to a markdown file and sent together with the commented lines as `@mentions`. If the PR's branch is checked out in one of your worktrees, the mention points at that file, so Claude fixes the real branch.
 - `<leader>dC` / `:AgentReviewPRConversation` shows the description, reviews (approved / requested changes) and comments in time order.
 - `:AgentReviewQuickfix comments` lists every thread: unresolved first, then outdated (comments on an older commit, which aren't placed on lines, like on GitHub), then resolved. `<CR>` on a comment about a removed line opens the file with the base side scrolled to that line.
 - All of it comes from **one** GraphQL request per PR (more only past 100 threads). `:AgentReviewRefresh` asks again only when the PR changed: the PR's ETag check comes back 304 otherwise, which is free.

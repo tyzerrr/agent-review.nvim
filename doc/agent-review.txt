@@ -216,7 +216,9 @@ CI state and the conversation lists every check.
 
 Writing is done as drafts kept under the state directory: <leader>da
 comments on the cursor line (or the visual selection), `r` / `R` in the
-thread window draft a reply / toggle resolving. |:AgentReviewPRSubmit|
+thread window draft a reply / toggle resolving, and `c` sends the thread
+with the commented lines to Claude Code (pointing at your own checkout of
+the PR's branch when there is one). |:AgentReviewPRSubmit|
 sends everything in one GraphQL request; parts GitHub rejects stay drafted.
 
 Pull request lists are written with plain keys instead of GitHub's search
