@@ -225,10 +225,14 @@ function M.toggle_viewed()
 	s:toggle_viewed(rel)
 end
 
----GitHubのPR一覧を開く。
----@param preset? string pr.presets の名前。nil なら pr.lists
-function M.pr_list(preset)
-	require("agent-review.pr.picker").pick(preset)
+---GitHubのPR一覧を開く。番号（"123" / "#123"）ならそのPRを直接レビューする。
+---@param arg? string pr.presets の名前かPR番号。nil なら pr.lists
+function M.pr_list(arg)
+	local number = arg and tonumber(arg:match("^#?(%d+)$"))
+	if number then
+		return require("agent-review.pr.open").open(number)
+	end
+	require("agent-review.pr.picker").pick(arg)
 end
 
 function M.files()
@@ -251,7 +255,10 @@ M.show_file = with_session(function(s, rel)
 	s:show(rel)
 end)
 
-M.refresh = with_session(function(s)
+local function refresh_session(s)
+	if not s:valid() then
+		return
+	end
 	-- LSPジャンプ等で一覧外のファイルを見ている時は動かさない。一覧から消えた時だけ移る。
 	local was_listed = s:in_review(s.current_rel)
 	local was_empty = s:showing_empty()
@@ -284,6 +291,45 @@ M.refresh = with_session(function(s)
 		notify("no changes against " .. s.label)
 	end
 	s.notified_empty = empty
+end
+
+M.refresh = with_session(function(s)
+	refresh_session(s)
+	-- PRは作業ツリーを監視しないので、refreshの時にだけ新しいpushを確かめる（ETagで304なら無料）。
+	if s.pr then
+		require("agent-review.pr.open").update(s, function(changed)
+			if changed then
+				refresh_session(s)
+			end
+		end)
+	end
 end)
+
+---取ってきたPRのworktreeでレビューを開く。
+---@param repo AgentReviewRepo
+---@param meta AgentReviewPr
+---@param checkout AgentReviewPrCheckout
+function M.open_pr_session(repo, meta, checkout)
+	if active() then
+		M.close()
+	end
+	highlight.setup()
+	local Session = require("agent-review.session")
+	-- バッファ名は実パスになるので、root も実パスにしないと作業ツリー内のファイルと判定できない。
+	local s = Session.new(vim.fn.resolve(checkout.root), checkout.base, checkout.base, {
+		label = ("PR #%d"):format(meta.number),
+		follow_base = false,
+		watch = false,
+	})
+	s.pr = { repo = repo, meta = meta, head = checkout.head }
+	s:refresh_files()
+	if #s.review_files == 0 then
+		pcall(api.nvim_del_augroup_by_id, s.augroup)
+		return notify(("PR #%d has no changes to review"):format(meta.number))
+	end
+	M._session = s
+	s:open(s.review_files[1].path)
+	emit("AgentReviewOpen", s)
+end
 
 return M

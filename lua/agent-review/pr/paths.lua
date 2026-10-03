@@ -47,6 +47,19 @@ function M.state_root()
 	return vim.fs.normalize("~/.local/state/agent-review")
 end
 
+---リポジトリのキー（"github.com/owner/name"）から各ディレクトリを返す。
+---@return { repo: string, mirror: string, pr: fun(number: integer): string }
+function M.for_key(key)
+	local dir = M.state_root() .. "/" .. key
+	return {
+		repo = dir,
+		mirror = dir .. "/repo.git",
+		pr = function(number)
+			return dir .. "/" .. number
+		end,
+	}
+end
+
 ---@return string|nil
 function M.repo_dir(url)
 	local key = M.repo_key(url)

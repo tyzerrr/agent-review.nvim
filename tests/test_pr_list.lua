@@ -273,7 +273,7 @@ T["picker"]["format() marks merged and closed PRs"] = function()
 	eq(format(vim.tbl_extend("force", base, { state = "OPEN" })):find("open", 1, true) == nil, true)
 end
 
-T["picker"]["ui.select lists the PRs and selecting opens it in the browser"] = function()
+T["picker"]["ui.select lists the PRs and selecting opens it for review"] = function()
 	setup({})
 	require("agent-review.config").options.picker = "ui_select"
 	local root = H.make_repo({})
@@ -281,7 +281,7 @@ T["picker"]["ui.select lists the PRs and selecting opens it in the browser"] = f
 	local cwd = vim.fn.getcwd()
 	local dir = H.fake_gh({
 		{ match = { "graphql" }, body = { data = { q1 = { nodes = { pr(1), pr(2) } }, q2 = { nodes = {} } } } },
-		{ match = { "pr", "view" }, body = "" },
+		{ match = { "repos/o/r/pulls/2" }, status = 404, body = { message = "Not Found" } },
 	})
 	vim.env.FAKE_GH_DIR = dir
 	local orig = vim.ui.select
@@ -299,7 +299,7 @@ T["picker"]["ui.select lists the PRs and selecting opens it in the browser"] = f
 	vim.cmd.cd(cwd)
 	eq(#shown, 2)
 	eq(shown[1]:find("#1", 1, true) ~= nil, true)
-	eq(H.gh_calls(dir)[2].args, { "pr", "view", "2", "--web", "--repo", "o/r" })
+	eq(H.gh_calls(dir)[2].args, { "api", "-i", "repos/o/r/pulls/2" })
 end
 
 local child = H.new_child()

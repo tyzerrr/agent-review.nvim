@@ -111,12 +111,15 @@ end
 
 ---REST APIを呼ぶ。etag を渡すと If-None-Match を付け、変わっていなければ not_modified を返す
 ---（304はGitHubのレート制限に数えられない）。
----@param opts { etag?: string }
+---@param opts { etag?: string, hostname?: string }
 ---@param cb fun(err: AgentReviewGhError|nil, res: AgentReviewRestResponse|nil)
 function M.rest(path, opts, cb)
 	local args = { "api", "-i", path }
 	if opts.etag then
 		vim.list_extend(args, { "-H", "If-None-Match: " .. opts.etag })
+	end
+	if opts.hostname and opts.hostname ~= "github.com" then
+		vim.list_extend(args, { "--hostname", opts.hostname })
 	end
 	M.run(args, {}, function(err, out)
 		-- gh は304でも終了コード1を返すので、終了コードではなくステータス行で判断する。
@@ -142,9 +145,10 @@ end
 ---キャッシュ付きのREST呼び出し。前回のETagで問い合わせ、変わっていなければキャッシュを返す。
 ---@param key string キャッシュのキー（例: "github.com/o/r/pulls/12"）
 ---@param cb fun(err: AgentReviewGhError|nil, body: any, info: { from_cache: boolean })
-function M.rest_cached(key, path, cb)
+---@param opts? { hostname?: string }
+function M.rest_cached(key, path, cb, opts)
 	local cached = store.get(key)
-	M.rest(path, { etag = cached and cached.etag }, function(err, res)
+	M.rest(path, { etag = cached and cached.etag, hostname = (opts or {}).hostname }, function(err, res)
 		if err then
 			return cb(err)
 		end
