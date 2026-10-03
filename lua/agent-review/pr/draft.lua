@@ -17,6 +17,7 @@ local M = {}
 ---@field replies { thread_id: string, body: string }[]
 ---@field resolve table<string, boolean> スレッドID -> true（解決する）/ false（解決を取り消す）
 ---@field summary string レビュー本文
+---@field viewed table<string, boolean> GitHubの "Viewed" に送る付け外し（path -> true/false）
 
 local function file(repo, number)
 	return ("%s/drafts/%d.json"):format(paths.for_key(repo.key).repo, number)
@@ -36,6 +37,7 @@ function M.load(repo, number)
 		replies = data.replies or {},
 		resolve = data.resolve or {},
 		summary = data.summary or "",
+		viewed = data.viewed or {},
 	}
 end
 
@@ -51,6 +53,7 @@ function M.save(repo, number, d)
 			-- 空のテーブルは配列 "[]" になるので、解決の対応表はオブジェクトとして書く。
 			resolve = next(d.resolve) and d.resolve or vim.empty_dict(),
 			summary = d.summary,
+			viewed = next(d.viewed or {}) and d.viewed or vim.empty_dict(),
 		}),
 	}, tmp)
 	vim.uv.fs_rename(tmp, path)
@@ -58,7 +61,7 @@ end
 
 ---@param d AgentReviewDraft
 function M.is_empty(d)
-	return #d.comments == 0 and #d.replies == 0 and next(d.resolve) == nil
+	return #d.comments == 0 and #d.replies == 0 and next(d.resolve) == nil and next(d.viewed or {}) == nil
 end
 
 ---@param d AgentReviewDraft
@@ -72,6 +75,7 @@ function M.describe(d)
 	add(#d.comments, "comment")
 	add(#d.replies, "reply")
 	add(vim.tbl_count(d.resolve), "resolve")
+	add(vim.tbl_count(d.viewed or {}), "viewed mark")
 	return #parts > 0 and table.concat(parts, ", ") or "no drafts"
 end
 

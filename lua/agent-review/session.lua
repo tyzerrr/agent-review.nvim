@@ -120,13 +120,18 @@ function Session:is_viewed(rel)
 	return rel ~= nil and self.viewed[rel] ~= nil
 end
 
-function Session:toggle_viewed(rel)
-	if self.viewed[rel] then
-		self.viewed[rel] = nil
-	else
+---印を付ける／外す（quickfix等の表示は呼び出し側で更新する）。
+function Session:set_viewed(rel, on)
+	if on then
 		self.viewed[rel] = viewed.fingerprints(self.root, { rel })[rel]
+	else
+		self.viewed[rel] = nil
 	end
 	viewed.save(self.viewed_path, self.viewed)
+end
+
+function Session:toggle_viewed(rel)
+	self:set_viewed(rel, not self.viewed[rel])
 	if self.qf_id then
 		self:update_quickfix()
 	end
@@ -393,10 +398,11 @@ function Session:update_winbar(rel, base_note, empty)
 		local base_rel = f and f.old_path or rel
 		local pos = self.review_index[rel] and ("[%d/%d] "):format(self.review_index[rel], #self.review_files) or ""
 		local status = f and (f.status .. " ") or ""
-		left = ("%%#AgentReviewWinbarBase# BASE %%* %s  %s%s"):format(
+		left = ("%%#AgentReviewWinbarBase# BASE %%* %s  %s%s%s"):format(
 			winbar_escape(self.label),
 			winbar_escape(base_rel),
-			base_note and ("  (" .. base_note .. ")") or ""
+			base_note and ("  (" .. base_note .. ")") or "",
+			self.status_text and ("  " .. winbar_escape(self.status_text)) or ""
 		)
 		right = ("%%#AgentReviewWinbarWork# WORKING %%* %s%s%s%s"):format(
 			pos,

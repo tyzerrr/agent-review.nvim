@@ -60,11 +60,14 @@ function M.load_comments(s)
 		if s.closed then
 			return
 		end
-		pr.threads, pr.conversation, pr.pr_id = data.threads, data.conversation, data.pr_id
-		require("agent-review.pr.threads").annotate(s)
-		if s.qf_mode == "comments" and s.qf_id then
+		pr.threads, pr.conversation, pr.pr_id, pr.checks = data.threads, data.conversation, data.pr_id, data.checks
+		s.status_text = M.checks_label(data.checks)
+		local viewed_changed = data.viewed and require("agent-review.pr.review").apply_remote_viewed(s, data.viewed)
+		if s.qf_id and (viewed_changed or s.qf_mode == "comments") then
 			s:update_quickfix()
 		end
+		-- winbar（CIの状態・Viewed）と行のコメントを描き直す。
+		s:sync()
 	end)
 end
 
@@ -86,6 +89,19 @@ function M.open(number)
 			require("agent-review").open_pr_session(repo, meta, checkout)
 		end)
 	end)
+end
+
+local CHECK_LABELS = {
+	SUCCESS = "✓ CI",
+	FAILURE = "✗ CI failed",
+	ERROR = "✗ CI failed",
+	PENDING = "… CI running",
+	EXPECTED = "… CI running",
+}
+
+---@param checks AgentReviewChecks|nil
+function M.checks_label(checks)
+	return checks and CHECK_LABELS[checks.state or ""] or nil
 end
 
 ---開いているPRに新しいpushがあれば取り込む。

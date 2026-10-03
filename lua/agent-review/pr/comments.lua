@@ -23,6 +23,24 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
       }
       reviews(first: 100) { nodes { state body submittedAt author { login } } }
       comments(first: 100) { nodes { body createdAt author { login } } }
+      files(first: 100) { nodes { path viewerViewedState } }
+      commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            statusCheckRollup {
+              state
+              contexts(first: 100) {
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion detailsUrl }
+                  ... on StatusContext { context state targetUrl }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -109,6 +127,35 @@ local function normalize_conversation(pr)
 	}
 end
 
+---@class AgentReviewChecks
+---@field state string|nil SUCCESS|FAILURE|ERROR|PENDING|EXPECTED
+---@field items { name: string, state: string, url: string|nil }[]
+
+---@return AgentReviewChecks
+local function normalize_checks(pr)
+	local commit = ((((pr.commits or {}).nodes or {})[1] or {}).commit or {})
+	local rollup = commit.statusCheckRollup or {}
+	local items = {}
+	for _, c in ipairs(((rollup.contexts or {}).nodes or {})) do
+		if c.__typename == "CheckRun" then
+			-- 終わっていないチェックは結論が無いので、状態（IN_PROGRESS 等）を出す。
+			table.insert(items, { name = c.name, state = c.conclusion or c.status or "PENDING", url = c.detailsUrl })
+		else
+			table.insert(items, { name = c.context, state = c.state or "PENDING", url = c.targetUrl })
+		end
+	end
+	return { state = rollup.state, items = items }
+end
+
+---@return table<string, string> path -> VIEWED|UNVIEWED|DISMISSED
+local function normalize_viewed(pr)
+	local out = {}
+	for _, f in ipairs(((pr.files or {}).nodes or {})) do
+		out[f.path] = f.viewerViewedState
+	end
+	return out
+end
+
 local function cache_key(repo, number)
 	return ("%s/pulls/%d/comments"):format(repo.key, number)
 end
@@ -123,7 +170,7 @@ end
 ---@param repo AgentReviewRepo
 ---@param cb fun(err: AgentReviewGhError|nil, data: { threads: AgentReviewThread[], conversation: AgentReviewConversation, pr_id: string }|nil)
 function M.fetch(repo, number, cb)
-	local threads, conversation, pr_id = {}, nil, nil
+	local threads, conversation, pr_id, checks, viewed = {}, nil, nil, nil, nil
 	local function page(cursor)
 		local vars = { owner = repo.owner, name = repo.name, number = number, cursor = cursor }
 		gh.graphql(QUERY, vars, function(err, data)
@@ -134,8 +181,12 @@ function M.fetch(repo, number, cb)
 			if not pr then
 				return cb({ kind = "api", message = ("PR #%d not found"):format(number) })
 			end
-			conversation = conversation or normalize_conversation(pr)
-			pr_id = pr_id or pr.id
+			if not conversation then
+				conversation = normalize_conversation(pr)
+				pr_id = pr.id
+				checks = normalize_checks(pr)
+				viewed = normalize_viewed(pr)
+			end
 			local rt = pr.reviewThreads or {}
 			for _, node in ipairs(rt.nodes or {}) do
 				table.insert(threads, normalize_thread(node))
@@ -144,7 +195,7 @@ function M.fetch(repo, number, cb)
 			if info.hasNextPage and info.endCursor then
 				return page(info.endCursor)
 			end
-			local result = { threads = threads, conversation = conversation, pr_id = pr_id }
+			local result = { threads = threads, conversation = conversation, pr_id = pr_id, checks = checks, viewed = viewed }
 			store.put(cache_key(repo, number), result)
 			cb(nil, result)
 		end, { hostname = repo.host })
