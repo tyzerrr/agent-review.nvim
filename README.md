@@ -118,6 +118,7 @@ When a branch name like `HEAD` moves to another commit (you or the agent commit,
 | base side, visual | `<C-l>` | Send the selection to Claude Code |
 | review (both sides) | `<leader>dv` | Mark the shown file as viewed / not viewed |
 | review (both sides) | `<leader>dc` / `<leader>dC` | PR: comments on the cursor line / the PR conversation |
+| review (both sides) | `<leader>da` (normal, visual) / `<leader>dS` | PR: draft a comment / submit the review |
 | quickfix window | `<Tab>` | Mark the file under the cursor as viewed / not viewed |
 | quickfix window | `<CR>` | Open the entry under the cursor in the review (even if another plugin maps `<CR>` globally) |
 
@@ -190,6 +191,8 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `qf_prev` | `<Plug>(agent-review-qf-prev)` | Previous quickfix entry; before the first one, go to the last |
 | `pr_thread` | `<Plug>(agent-review-pr-thread)` | PR: open the comment threads on the cursor line |
 | `pr_conversation` | `<Plug>(agent-review-pr-conversation)` | PR: description, reviews and comments |
+| `pr_comment` | `<Plug>(agent-review-pr-comment)` (normal, visual) | PR: draft a comment on the line(s) |
+| `pr_submit` | `<Plug>(agent-review-pr-submit)` | PR: submit the drafted review |
 | `toggle_viewed` | `<Plug>(agent-review-toggle-viewed)` | Mark the file as viewed / not viewed (quickfix: the line under the cursor) |
 | `qf_open` | `<Plug>(agent-review-qf-open)` | Open the review quickfix entry under the cursor in the working window |
 | `refresh` | `<Plug>(agent-review-refresh)` | Reload the changed files and the diff |
@@ -210,6 +213,7 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `:AgentReviewPR [preset\|number]` | List GitHub pull requests (the default lists, or a preset from `pr.presets`), or review PR `<number>` |
 | `:AgentReviewPRClean` | Remove checked-out PRs that are not being reviewed |
 | `:AgentReviewPRConversation` | Show the PR's description, reviews and comments |
+| `:AgentReviewPRSubmit [approve\|request_changes\|comment]` | Send the drafted comments, replies and resolves in one request |
 | `:AgentReviewHunks` | Pick a changed hunk |
 | `:AgentReviewQuickfix [files\|hunks\|comments]` | Rebuild the quickfix list and open it (`comments`: PR review threads) |
 | `:AgentReviewRefresh` | Reload the changed files and buffers now (normally done for you, see `auto_refresh`) |
@@ -259,7 +263,7 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 
 ## Pull requests
 
-Review anyone's pull request in the same layout: the PR's code on the right with your language server, the base on the left, every changed file in quickfix, and the review comments right on the lines they belong to. Writing comments, resolving threads and approving are coming next.
+Review anyone's pull request in the same layout: the PR's code on the right with your language server, the base on the left, every changed file in quickfix, the review comments right on the lines they belong to, and your own review: comments, replies, resolves and approval, sent to GitHub in one request.
 
 - `:AgentReviewPR 123` (or pick one from the list) opens PR #123 for review.
 - The diff is the same as GitHub's "Files changed": against the merge-base with the target branch (for merged PRs, the target branch as GitHub recorded it).
@@ -273,6 +277,16 @@ Review anyone's pull request in the same layout: the PR's code on the right with
 - `<leader>dC` / `:AgentReviewPRConversation` shows the description, reviews (approved / requested changes) and comments in time order.
 - `:AgentReviewQuickfix comments` lists every thread: unresolved first, then outdated (comments on an older commit, which aren't placed on lines, like on GitHub), then resolved. `<CR>` on a comment about a removed line opens the file with the base side scrolled to that line.
 - All of it comes from **one** GraphQL request per PR (more only past 100 threads). `:AgentReviewRefresh` asks again only when the PR changed: the PR's ETag check comes back 304 otherwise, which is free.
+
+### Writing a review
+
+Everything you write is a **draft** first, kept per PR under the state directory (it survives closing Neovim), and goes to GitHub in **one request** when you submit:
+
+- `<leader>da` comments on the cursor line, or on the selected lines in visual mode. On the right it comments on the PR's code, on the left on the removed side. A small markdown window opens: `:w` (or `<C-s>`) saves the draft, `q` cancels. On the same line again you edit the draft; saving it empty deletes it. GitHub only accepts comments on lines it shows in the diff (changes and 3 lines around them), so other lines are refused right away.
+- In the thread window (`<leader>dc`): `r` drafts a reply, `R` toggles resolving the thread.
+- Drafts show inline (`📝 draft: …`, `📝 draft reply`, `(will resolve)`) and at the top of `:AgentReviewQuickfix comments`.
+- `:AgentReviewPRSubmit approve` / `request_changes` / `comment` (or `<leader>dS`) opens a window for the review's summary; `:w` sends the review with all drafted comments, the replies and the resolves together. Without a verdict, drafted comments go out as a "Comment" review, and replies/resolves alone are sent as they are.
+- If GitHub rejects part of it (for example, you can't approve your own PR), what went through leaves the draft and the rest stays, so you can fix it and submit again.
 
 ### Where the PR's code lives
 
@@ -399,7 +413,7 @@ require("agent-review").setup({
     global = { toggle = "<leader>dr", open_rev = "<leader>dR", files = "<leader>dl", hunks = "<leader>dh" },
     review = {
       next_file = "]f", prev_file = "[f", qf_next = "]q", qf_prev = "[q", toggle_viewed = "<leader>dv",
-      pr_thread = "<leader>dc", pr_conversation = "<leader>dC",
+      pr_thread = "<leader>dc", pr_conversation = "<leader>dC", pr_comment = "<leader>da", pr_submit = "<leader>dS",
     },
     base = { close = "q", send_to_claude = "<C-l>" },
     quickfix = { qf_open = "<CR>", toggle_viewed = "<Tab>" }, -- only in the review tab's quickfix window
@@ -415,6 +429,7 @@ require("agent-review").setup({
     limit = 50,           -- PRs per search
     comment_sign = "💬",  -- sign on lines with review comments
     resolved_sign = "✓",
+    draft_sign = "📝",
   },
   claude = {
     focus_after_send = true,     -- jump into the Claude terminal after <C-l>

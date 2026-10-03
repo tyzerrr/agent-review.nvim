@@ -85,6 +85,25 @@ function M.graphql(query, variables, cb, opts)
 	end)
 end
 
+---GraphQLを呼び、部分的な成功も扱えるよう data と errors をそのまま返す（mutationをまとめて送る時に使う）。
+---@param cb fun(err: AgentReviewGhError|nil, data: table|nil, errors: table[]|nil)
+function M.graphql_raw(query, variables, cb, opts)
+	local body = vim.json.encode({ query = query, variables = vim.tbl_isempty(variables or {}) and vim.empty_dict() or variables })
+	local args = { "api", "graphql", "--input", "-" }
+	local host = (opts or {}).hostname
+	if host and host ~= "github.com" then
+		vim.list_extend(args, { "--hostname", host })
+	end
+	M.run(args, { stdin = body }, function(err, out)
+		-- GraphQLのエラーでも gh は本文を出して終了コード1になるので、本文が読めればそちらを優先する。
+		local data = decode(out)
+		if type(data) == "table" and (data.data ~= nil or data.errors ~= nil) then
+			return cb(nil, data.data, data.errors)
+		end
+		cb(err or { kind = "parse", message = "unexpected gh output" })
+	end)
+end
+
 ---`gh api -i` の出力をステータス・ヘッダ・本文に分ける。
 local function parse_response(out)
 	local status = tonumber(out:match("^HTTP/[%d.]+ (%d+)"))

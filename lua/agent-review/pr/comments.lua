@@ -9,7 +9,7 @@ local QUERY = [[
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      title body createdAt updatedAt
+      id title body createdAt updatedAt
       author { login }
       reviewThreads(first: 100, after: $cursor) {
         pageInfo { hasNextPage endCursor }
@@ -121,9 +121,9 @@ function M.cached(repo, number)
 end
 
 ---@param repo AgentReviewRepo
----@param cb fun(err: AgentReviewGhError|nil, data: { threads: AgentReviewThread[], conversation: AgentReviewConversation }|nil)
+---@param cb fun(err: AgentReviewGhError|nil, data: { threads: AgentReviewThread[], conversation: AgentReviewConversation, pr_id: string }|nil)
 function M.fetch(repo, number, cb)
-	local threads, conversation = {}, nil
+	local threads, conversation, pr_id = {}, nil, nil
 	local function page(cursor)
 		local vars = { owner = repo.owner, name = repo.name, number = number, cursor = cursor }
 		gh.graphql(QUERY, vars, function(err, data)
@@ -135,6 +135,7 @@ function M.fetch(repo, number, cb)
 				return cb({ kind = "api", message = ("PR #%d not found"):format(number) })
 			end
 			conversation = conversation or normalize_conversation(pr)
+			pr_id = pr_id or pr.id
 			local rt = pr.reviewThreads or {}
 			for _, node in ipairs(rt.nodes or {}) do
 				table.insert(threads, normalize_thread(node))
@@ -143,7 +144,7 @@ function M.fetch(repo, number, cb)
 			if info.hasNextPage and info.endCursor then
 				return page(info.endCursor)
 			end
-			local result = { threads = threads, conversation = conversation }
+			local result = { threads = threads, conversation = conversation, pr_id = pr_id }
 			store.put(cache_key(repo, number), result)
 			cb(nil, result)
 		end, { hostname = repo.host })

@@ -40,6 +40,7 @@ function M.setup()
 		AgentReviewWinbarWork = { fg = GREEN, bold = true },
 		AgentReviewComment = { link = "DiagnosticInfo" },
 		AgentReviewCommentResolved = { link = "Comment" },
+		AgentReviewDraft = { link = "DiagnosticHint" },
 		-- コメントした人ごとの色。同じ人は常に同じ色になる。
 		AgentReviewAuthor1 = { fg = 0x58a6ff, bold = true },
 		AgentReviewAuthor2 = { fg = 0xd2a8ff, bold = true },

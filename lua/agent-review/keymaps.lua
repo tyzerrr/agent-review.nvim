@@ -101,6 +101,21 @@ M.actions = {
 		end,
 		plug = "pr-thread",
 	},
+	pr_comment = {
+		desc = "PR: comment on this line (draft)",
+		mode = { "n", "x" },
+		fn = function()
+			ar().pr_comment()
+		end,
+		plug = "pr-comment",
+	},
+	pr_submit = {
+		desc = "PR: submit the review",
+		fn = function()
+			ar().pr_submit()
+		end,
+		plug = "pr-submit",
+	},
 	pr_conversation = {
 		desc = "PR: conversation",
 		fn = function()

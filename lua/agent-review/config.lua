@@ -64,6 +64,7 @@ M.defaults = {
 		-- レビューコメントのある行のサイン（解決済みは resolved_sign）。
 		comment_sign = "💬",
 		resolved_sign = "✓",
+		draft_sign = "📝",
 	},
 	-- エージェントがファイルを書き換えたら自動でrefreshする。false で無効。
 	auto_refresh = {
@@ -95,6 +96,8 @@ M.defaults = {
 			toggle_viewed = "<leader>dv",
 			pr_thread = "<leader>dc",
 			pr_conversation = "<leader>dC",
+			pr_comment = "<leader>da",
+			pr_submit = "<leader>dS",
 		},
 		-- base側（左）のバッファだけに設定されるキー。
 		-- 作業ツリー側にqを置かないのはマクロ記録と衝突するため。
