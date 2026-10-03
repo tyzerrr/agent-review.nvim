@@ -42,13 +42,60 @@ function M.for_file(threads, rel, side)
 	end, threads or {})
 end
 
+local pad_ns = api.nvim_create_namespace("agent-review-comment-pad")
+
+---diffのhunkを使って、片側の行が反対側のどの行に並ぶかを返す（0 は先頭より前）。
+---@param from "RIGHT"|"LEFT"
+local function aligned_line(hunks, line, from)
+	local offset = 0
+	for _, h in ipairs(hunks) do
+		local fs, fc = h.work_start, h.work_count
+		local ts, tc = h.base_start, h.base_count
+		if from == "LEFT" then
+			fs, fc, ts, tc = ts, tc, fs, fc
+		end
+		if fc > 0 and line >= fs and line <= fs + fc - 1 then
+			local k = line - fs
+			if k < tc then
+				return ts + k
+			end
+			return tc > 0 and (ts + tc - 1) or ts
+		end
+		if (fc > 0 and line < fs) or (fc == 0 and line <= fs) then
+			return line + offset
+		end
+		offset = offset + (tc - fc)
+	end
+	return line + offset
+end
+
+---コメントの行を足した分だけ、反対側の窓にも空行を足して左右の並びを保つ。
+---Neovimのdiffは virt_lines を位置合わせに数えないため。
+local function pad(buf, line, count)
+	if count <= 0 or not api.nvim_buf_is_valid(buf) then
+		return
+	end
+	local blank = {}
+	for i = 1, count do
+		blank[i] = { { "", "" } }
+	end
+	local last = api.nvim_buf_line_count(buf)
+	if line <= 0 then
+		pcall(api.nvim_buf_set_extmark, buf, pad_ns, 0, 0, { virt_lines = blank, virt_lines_above = true })
+	else
+		pcall(api.nvim_buf_set_extmark, buf, pad_ns, math.min(line, last) - 1, 0, { virt_lines = blank })
+	end
+end
+
 local function draft_of(s)
 	return require("agent-review.pr.draft").load(s.pr.repo, s.pr.meta.number)
 end
 
 ---@param d AgentReviewDraft
+---@return table<integer, integer> 行 -> そこに足したコメントの行数
 local function place(buf, threads, drafts, d)
 	api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+	local added = {}
 	local last = api.nvim_buf_line_count(buf)
 	local opts = config.options.pr or {}
 	local replied = {}
@@ -71,23 +118,25 @@ local function place(buf, threads, drafts, d)
 		if pending ~= "" then
 			table.insert(chunks, { pending, "AgentReviewDraft" })
 		end
-		pcall(api.nvim_buf_set_extmark, buf, ns, math.min(t.line, last) - 1, 0, {
+		-- 行末だと長い行で画面の外に出てしまうので、GitHubと同じくコメントは行の下に出す。
+		local line = math.min(t.line, last)
+		pcall(api.nvim_buf_set_extmark, buf, ns, line - 1, 0, {
 			sign_text = t.resolved and (opts.resolved_sign or "✓") or (opts.comment_sign or "💬"),
 			sign_hl_group = hl,
-			virt_text = chunks,
-			virt_text_pos = "eol",
-			hl_mode = "combine",
+			virt_lines = { chunks },
 		})
+		added[line] = (added[line] or 0) + 1
 	end
 	for _, c in ipairs(drafts) do
-		pcall(api.nvim_buf_set_extmark, buf, ns, math.min(c.line, last) - 1, 0, {
+		local line = math.min(c.line, last)
+		pcall(api.nvim_buf_set_extmark, buf, ns, line - 1, 0, {
 			sign_text = opts.draft_sign or "📝",
 			sign_hl_group = "AgentReviewDraft",
-			virt_text = { { "  📝 draft: " .. first_line(c.body, 60), "AgentReviewDraft" } },
-			virt_text_pos = "eol",
-			hl_mode = "combine",
+			virt_lines = { { { "  📝 draft: " .. first_line(c.body, 60), "AgentReviewDraft" } } },
 		})
+		added[line] = (added[line] or 0) + 1
 	end
+	return added
 end
 
 local function drafts_for(d, rel, side)
@@ -106,9 +155,20 @@ function M.annotate(s)
 	local d = draft_of(s)
 	local right = api.nvim_win_get_buf(s.right_win)
 	local left = api.nvim_win_get_buf(s.left_win)
-	place(right, rel and M.for_file(s.pr.threads, rel, "RIGHT") or {}, rel and drafts_for(d, rel, "RIGHT") or {}, d)
-	if vim.b[left].agent_review_side == "base" then
-		place(left, rel and M.for_file(s.pr.threads, rel, "LEFT") or {}, rel and drafts_for(d, rel, "LEFT") or {}, d)
+	api.nvim_buf_clear_namespace(right, pad_ns, 0, -1)
+	api.nvim_buf_clear_namespace(left, pad_ns, 0, -1)
+	local right_added = place(right, rel and M.for_file(s.pr.threads, rel, "RIGHT") or {}, rel and drafts_for(d, rel, "RIGHT") or {}, d)
+	if vim.b[left].agent_review_side ~= "base" then
+		return
+	end
+	local left_added = place(left, rel and M.for_file(s.pr.threads, rel, "LEFT") or {}, rel and drafts_for(d, rel, "LEFT") or {}, d)
+	local f = rel and s:file(rel)
+	local hunks = f and require("agent-review.changes").compute(s.root, s.base_sha, f).hunks or {}
+	for line, count in pairs(right_added) do
+		pad(left, aligned_line(hunks, line, "RIGHT"), count)
+	end
+	for line, count in pairs(left_added) do
+		pad(right, aligned_line(hunks, line, "LEFT"), count)
 	end
 end
 
@@ -116,6 +176,7 @@ function M.clear_all()
 	for _, buf in ipairs(api.nvim_list_bufs()) do
 		if api.nvim_buf_is_valid(buf) then
 			api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+			api.nvim_buf_clear_namespace(buf, pad_ns, 0, -1)
 		end
 	end
 end
@@ -260,6 +321,7 @@ local function locate(s, item, path, side)
 		item.module = path
 	elseif vim.uv.fs_stat(s.root .. "/" .. path) then
 		item.filename = s.root .. "/" .. path
+		item.module = path
 	else
 		item.bufnr = s:deleted_buffer(path)
 		item.module = path
@@ -367,6 +429,9 @@ function M.open_conversation(s)
 	api.nvim_set_current_win(win)
 	vim.keymap.set("n", "q", function()
 		pcall(api.nvim_win_close, win, true)
+		if s:valid() then
+			api.nvim_set_current_win(s.right_win)
+		end
 	end, { buffer = buf, nowait = true })
 	return buf
 end

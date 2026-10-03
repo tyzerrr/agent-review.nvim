@@ -111,7 +111,9 @@ function M.qf_items(root, list, mode, resolve_bufnr, is_viewed)
 	for _, c in ipairs(list) do
 		-- 印の有無で列がずれないよう、印の無い行にも同じ幅の空白を入れる。
 		local mark = is_viewed and (is_viewed(c.file.path) and "✓ " or "  ") or ""
-		local entry = { filename = root .. "/" .. c.file.path }
+		-- module を付けると quickfix にはこの文字列が出る。PRのコードは state ディレクトリにあり
+		-- 絶対パスが長くなるので、常にリポジトリからの相対パスを見せる。
+		local entry = { filename = root .. "/" .. c.file.path, module = c.file.path }
 		local bufnr = resolve_bufnr and resolve_bufnr(c.file)
 		if bufnr then
 			-- moduleを指定すると、quickfix上は内部のバッファ名の代わりにこのパスが表示される。

@@ -139,7 +139,7 @@ local function marks(side)
 		local ns = vim.api.nvim_get_namespaces()["agent-review-comments"]
 		local out = {}
 		for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns or -1, 0, -1, { details = true })) do
-			local text = table.concat(vim.tbl_map(function(c) return c[1] end, m[4].virt_text or {}), "")
+			local text = table.concat(vim.tbl_map(function(c) return c[1] end, (m[4].virt_lines or {})[1] or {}), "")
 			table.insert(out, { line = m[2] + 1, sign = vim.trim(m[4].sign_text or ""), text = text })
 		end
 		return out
@@ -219,6 +219,30 @@ T["inline"]["marks resolved threads differently"] = function()
 	local m = marks("right")
 	eq(#m, 1)
 	eq(m[1].text:find("resolved", 1, true) ~= nil, true)
+end
+
+T["inline"]["comment lines under the code keep both sides of the diff aligned"] = function()
+	set_gh(default_rules({
+		thread("A1", "long.go", 2, "RIGHT", { comment(11, "bob", "first") }),
+		thread("A2", "long.go", 2, "RIGHT", { comment(12, "carol", "second") }),
+		thread("A3", "long.go", 9, "LEFT", { comment(13, "dave", "on the base") }),
+	}))
+	open_pr()
+	show("long.go")
+	child.lua("vim.cmd('redraw')")
+	local rows = child.lua([[
+		local s = require("agent-review")._session
+		local out = {}
+		for _, l in ipairs({ 1, 5, 10, 15 }) do
+			table.insert(out, { vim.fn.screenpos(s.left_win, l, 1).row, vim.fn.screenpos(s.right_win, l, 1).row })
+		end
+		return out
+	]])
+	for i, r in ipairs(rows) do
+		eq({ i, r[1] }, { i, r[2] })
+	end
+	-- コメントの行の分だけ下にずれている（左右とも）
+	eq(rows[2][1] - rows[1][1] > 4, true)
 end
 
 T["thread"] = MiniTest.new_set()
@@ -311,6 +335,19 @@ T["conversation"][":AgentReviewPRConversation shows the description and the time
 	for _, part in ipairs({ "Feature 7", "This PR changes A.", "@bob", "requested changes", "A few things.", "@carol", "@erin", "Looks exciting!" }) do
 		eq({ part, buf.text:find(part, 1, true) ~= nil }, { part, true })
 	end
+end
+
+T["conversation"]["q closes it and returns to the review"] = function()
+	open_pr()
+	child.cmd("AgentReviewPRConversation")
+	child.type_keys("q")
+	eq(child.lua_get([[vim.api.nvim_get_current_win() == require("agent-review")._session.right_win]]), true)
+end
+
+T["quickfix"]["comment entries show paths relative to the repository"] = function()
+	open_pr()
+	child.cmd("AgentReviewQuickfix comments")
+	eq(child.lua_get([[vim.tbl_map(function(i) return i.module end, vim.fn.getqflist())]]), { "app.go", "gone.go", "app.go", "new.go" })
 end
 
 T["refresh"] = MiniTest.new_set()

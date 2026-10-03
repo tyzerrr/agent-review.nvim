@@ -92,6 +92,8 @@ T[":AgentReviewPR <number> opens the PR in the review layout"] = function()
 	-- PRの分岐後に main で変わった util.go は含まれない
 	eq(st.qf, { "app.go", "gone.go", "long.go", "new.go" })
 	eq(st.left.winbar:find("PR #7", 1, true) ~= nil, true)
+	-- PRのコードは state ディレクトリにあるので、quickfix にはリポジトリからの相対パスを出す
+	eq(child.lua_get([[vim.tbl_map(function(i) return i.module end, vim.fn.getqflist())]]), { "app.go", "gone.go", "long.go", "new.go" })
 end
 
 T["the base window follows the working window inside the PR checkout"] = function()
