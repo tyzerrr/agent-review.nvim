@@ -38,6 +38,13 @@ M.defaults = {
 		patterns = nil,
 		extra_patterns = {},
 	},
+	-- GitHubのPRレビュー。
+	pr = {
+		-- gh CLI の実行ファイル。
+		gh = "gh",
+		-- PRのコード・キャッシュ・下書きの置き場所。nil なら $XDG_STATE_HOME/agent-review（無ければ ~/.local/state/agent-review）。
+		state_dir = nil,
+	},
 	-- エージェントがファイルを書き換えたら自動でrefreshする。false で無効。
 	auto_refresh = {
 		enabled = true,

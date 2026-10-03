@@ -13,6 +13,7 @@ local SCHEME = "agent-review://"
 ---@class AgentReviewSession
 ---@field root string
 ---@field base string ユーザーが指定したrev
+---@field label string winbarやquickfixに出す比較元の名前（PRなら "PR #12"）
 ---@field base_sha string 比較元のコミット。auto_refresh.follow_base ならbaseが指す先に追従する。
 ---@field files AgentReviewFile[] baseとの差分がある全ファイル（gdで開いたテストのdiffにも使う）
 ---@field review_files AgentReviewFile[] レビュー対象（tests.hide ならテストを除く）。quickfix・]f・ピッカーが使う
@@ -22,10 +23,18 @@ local SCHEME = "agent-review://"
 local Session = {}
 Session.__index = Session
 
-function Session.new(root, base, base_sha)
+---@class AgentReviewSessionOptions
+---@field label? string 比較元の表示名。省略時は base
+---@field follow_base? boolean false なら base が別のコミットを指しても比較元を動かさない
+---@field watch? boolean false なら作業ツリーの変更を監視しない
+
+---@param opts? AgentReviewSessionOptions
+function Session.new(root, base, base_sha, opts)
 	local self = setmetatable({}, Session)
+	self.opts = opts or {}
 	self.root = root
 	self.base = base
+	self.label = self.opts.label or base
 	self.base_sha = base_sha
 	self.short_sha = base_sha:sub(1, 8)
 	self.files = {}
@@ -144,7 +153,7 @@ function Session:update_quickfix(mode, opts)
 	local n_viewed = #vim.tbl_filter(function(f)
 		return self:is_viewed(f.path)
 	end, self.review_files)
-	local title = "Agent Review: " .. self.base .. (mode == "hunks" and " (hunks)" or "")
+	local title = "Agent Review: " .. self.label .. (mode == "hunks" and " (hunks)" or "")
 	if n_viewed > 0 then
 		title = title .. (" (%d/%d viewed)"):format(n_viewed, #self.review_files)
 	end
@@ -368,7 +377,7 @@ function Session:update_winbar(rel, base_note, empty)
 	end
 	local left, right
 	if empty then
-		left = ("%%#AgentReviewWinbarBase# BASE %%* %s  (no changes)"):format(winbar_escape(self.base))
+		left = ("%%#AgentReviewWinbarBase# BASE %%* %s  (no changes)"):format(winbar_escape(self.label))
 		right = "%#AgentReviewWinbarWork# WORKING %* (no changes)"
 	elseif rel then
 		local f = self:file(rel)
@@ -376,7 +385,7 @@ function Session:update_winbar(rel, base_note, empty)
 		local pos = self.review_index[rel] and ("[%d/%d] "):format(self.review_index[rel], #self.review_files) or ""
 		local status = f and (f.status .. " ") or ""
 		left = ("%%#AgentReviewWinbarBase# BASE %%* %s  %s%s"):format(
-			winbar_escape(self.base),
+			winbar_escape(self.label),
 			winbar_escape(base_rel),
 			base_note and ("  (" .. base_note .. ")") or ""
 		)
@@ -696,8 +705,9 @@ end
 
 ---作業ツリーの変更を監視して自動でrefreshする。
 function Session:watch()
+	self.fs_watchers = {}
 	local opts = config.options.auto_refresh
-	if not (opts and opts.enabled ~= false) then
+	if self.opts.watch == false or not (opts and opts.enabled ~= false) then
 		return
 	end
 	local timer = vim.uv.new_timer()
@@ -738,7 +748,6 @@ function Session:watch()
 			handle:close()
 		end
 	end
-	self.fs_watchers = {}
 	watch_dir(self.root, function(filename)
 		-- .git内はrefresh中のgit status自身も書き込むので、refreshすると止まらなくなる。
 		-- commit等で比較元が動いたかだけを（書き込みの無いrev-parseで）確かめる。
@@ -761,14 +770,10 @@ function Session:watch()
 	api.nvim_create_autocmd({ "FocusGained", "TermLeave" }, { group = self.augroup, callback = schedule_refresh })
 end
 
-local function follows_base()
-	local opts = config.options.auto_refresh
-	return not (type(opts) == "table" and opts.follow_base == false)
-end
-
 ---指定したrev（HEAD等）が開いた時と別のコミットを指しているか。
 function Session:base_moved()
-	if not follows_base() then
+	local opts = config.options.auto_refresh
+	if self.opts.follow_base == false or (type(opts) == "table" and opts.follow_base == false) then
 		return false
 	end
 	local sha = git.resolve_rev(self.root, self.base)
