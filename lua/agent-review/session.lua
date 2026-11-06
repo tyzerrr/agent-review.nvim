@@ -4,6 +4,8 @@ local git = require("agent-review.git")
 local highlight = require("agent-review.highlight")
 local keymaps = require("agent-review.keymaps")
 local testfiles = require("agent-review.testfiles")
+local tree = require("agent-review.tree")
+local tree_view = require("agent-review.tree_view")
 local viewed = require("agent-review.viewed")
 
 local api = vim.api
@@ -12,7 +14,8 @@ local SCHEME = "agent-review://"
 
 ---@class AgentReviewSession
 ---@field root string
----@field base string ユーザーが指定したrev
+---@field base string ユーザーが指定したrev（ブランチモードなら分岐元のブランチ）
+---@field mode? "working"|"branch"|"rev" working: 未commitの変更（HEADと比較）/ branch: 分岐元との merge-base と比較 / rev: 指定したrev
 ---@field label string winbarやquickfixに出す比較元の名前（PRなら "PR #12"）
 ---@field base_sha string 比較元のコミット。auto_refresh.follow_base ならbaseが指す先に追従する。
 ---@field files AgentReviewFile[] baseとの差分がある全ファイル（gdで開いたテストのdiffにも使う）
@@ -27,6 +30,7 @@ Session.__index = Session
 ---@field label? string 比較元の表示名。省略時は base
 ---@field follow_base? boolean false なら base が別のコミットを指しても比較元を動かさない
 ---@field watch? boolean false なら作業ツリーの変更を監視しない
+---@field mode? "working"|"branch"|"rev"
 
 ---@param opts? AgentReviewSessionOptions
 function Session.new(root, base, base_sha, opts)
@@ -34,6 +38,7 @@ function Session.new(root, base, base_sha, opts)
 	self.opts = opts or {}
 	self.root = root
 	self.base = base
+	self.mode = self.opts.mode
 	self.label = self.opts.label or base
 	self.base_sha = base_sha
 	self.short_sha = base_sha:sub(1, 8)
@@ -47,6 +52,8 @@ function Session.new(root, base, base_sha, opts)
 	self.base_bufs = {} -- rel -> buf
 	self.deleted_bufs = {} -- rel -> buf
 	self.saved_maps = {} -- buf -> { lhs -> maparg }
+	self.tree_collapsed = {} -- フォルダのパス -> true
+	self.base_cache = {} -- "<sha>:<path>" -> base側の行
 	self.augroup = api.nvim_create_augroup("AgentReviewSession", { clear = true })
 	return self
 end
@@ -75,14 +82,20 @@ function Session:refresh_files()
 	for i, f in ipairs(self.files) do
 		self.file_index[f.path] = i
 	end
-	self.review_files, self.hidden_tests = testfiles.filter(self.files)
+	local kept
+	kept, self.hidden_tests = testfiles.filter(self.files)
+	-- ]f やピッカーの順番をツリーの見た目（フォルダが先）に合わせる。
+	self.review_files = tree.sort(kept)
 	self.review_index = {}
 	for i, f in ipairs(self.review_files) do
 		self.review_index[f.path] = i
 	end
 	self:prune_viewed()
-	if self.qf_id and signature(self.review_files) .. self:viewed_signature() ~= before then
-		self:update_quickfix()
+	if signature(self.review_files) .. self:viewed_signature() ~= before then
+		if self.qf_id then
+			self:update_quickfix()
+		end
+		tree_view.render(self)
 	end
 end
 
@@ -132,6 +145,12 @@ end
 
 function Session:toggle_viewed(rel)
 	self:set_viewed(rel, not self.viewed[rel])
+	self:viewed_changed()
+end
+
+---印の付け外しを quickfix・ツリー・winbar に反映する。
+function Session:viewed_changed()
+	tree_view.render(self)
 	if self.qf_id then
 		self:update_quickfix()
 	end
@@ -162,7 +181,7 @@ function Session:update_quickfix(mode, opts)
 			context = { agent_review = true },
 		}
 	else
-		local list = changes.collect(self.root, self.base_sha, self.review_files)
+		local list = changes.collect(self.root, self.base_sha, self.review_files, self.base_cache)
 		local n_viewed = #vim.tbl_filter(function(f)
 			return self:is_viewed(f.path)
 		end, self.review_files)
@@ -466,6 +485,7 @@ function Session:sync()
 		highlight.apply(self.right_win, "work")
 		self:map_work_buffer(buf)
 		self.current_rel = rel
+		tree_view.mark_current(self)
 		if self.pr then
 			require("agent-review.pr.threads").annotate(self)
 		end
@@ -498,14 +518,17 @@ function Session:show(rel)
 	self:sync()
 end
 
----quickfixで選ばれている項目を右窓に表示する。見ていたファイルが一覧から消えた時の移り先。
-function Session:show_qf_selection()
+---見ていたファイルが一覧から消えた時の移り先を出す。quickfixがあればその選択項目、
+---無ければ一覧で同じ位置にある（=次の）ファイル。
+---@param old_idx? integer 消える前の一覧での位置
+function Session:show_qf_selection(old_idx)
 	local item
 	if self:qf_list_alive() then
 		local info = vim.fn.getqflist({ id = self.qf_id, idx = 0, items = 1 })
 		item = info.items[info.idx]
 	end
-	local rel = item and self:rel_path(item.bufnr) or self.review_files[1].path
+	local fallback = self.review_files[math.min(old_idx or 1, #self.review_files)]
+	local rel = item and self:rel_path(item.bufnr) or fallback.path
 	self:show(rel)
 	if item then
 		pcall(api.nvim_win_set_cursor, self.right_win, { math.max(item.lnum, 1), 0 })
@@ -537,23 +560,33 @@ function Session:pick_hunks()
 	require("agent-review.picker").pick_hunks()
 end
 
----左窓（base）に実ファイルが開かれたら右窓へ移す。
+---左窓（base）やツリーの窓に実ファイルが開かれたら右窓へ移す。
 ---telescopeやquickfixは「直前の窓」に開くため、左窓から操作すると左に入ってしまう。
-function Session:redirect_from_left()
-	if not self:valid() then
+---@param win? integer 既定は左窓
+function Session:redirect_from_left(win)
+	win = win or self.left_win
+	if not (self:valid() and api.nvim_win_is_valid(win)) then
 		return
 	end
-	local buf = api.nvim_win_get_buf(self.left_win)
-	if vim.b[buf].agent_review_side == "base" then
-		return
+	local buf = api.nvim_win_get_buf(win)
+	local back
+	if win == self.left_win then
+		if vim.b[buf].agent_review_side == "base" then
+			return
+		end
+		back = self.left_base_buf
+		if not (back and api.nvim_buf_is_valid(back)) then
+			back = self:placeholder("")
+		end
+	else
+		if buf == self.tree_buf then
+			return
+		end
+		back = self.tree_buf
 	end
-	local cursor = api.nvim_win_get_cursor(self.left_win)
-	local focused = api.nvim_get_current_win() == self.left_win
-	local back = self.left_base_buf
-	if not (back and api.nvim_buf_is_valid(back)) then
-		back = self:placeholder("")
-	end
-	api.nvim_win_set_buf(self.left_win, back)
+	local cursor = api.nvim_win_get_cursor(win)
+	local focused = api.nvim_get_current_win() == win
+	api.nvim_win_set_buf(win, back)
 	api.nvim_win_set_buf(self.right_win, buf)
 	pcall(api.nvim_win_set_cursor, self.right_win, cursor)
 	if focused then
@@ -622,6 +655,11 @@ function Session:map_work_buffer(buf)
 	self:apply_buffer_maps(buf, "work")
 end
 
+function Session:map_tree_buffer(buf)
+	self.saved_maps[buf] = self.saved_maps[buf] or {}
+	self:apply_buffer_maps(buf, "tree")
+end
+
 function Session:map_quickfix_buffer(buf)
 	if self.saved_maps[buf] then
 		return
@@ -661,6 +699,10 @@ function Session:open(initial_rel)
 	api.nvim_set_current_win(self.right_win)
 
 	self:attach_autocmds()
+	if config.options.tree.enabled then
+		tree_view.open(self)
+		require("agent-review.resize").equalize(self)
+	end
 	self:show(initial_rel)
 	local qf = config.options.quickfix
 	if qf.auto then
@@ -695,6 +737,15 @@ function Session:attach_autocmds()
 			then
 				-- 一覧を見ながら]q/[qを押すことが多いので、quickfix窓でもレビューのキーを使えるようにする。
 				self:map_quickfix_buffer(cur_buf)
+				return
+			end
+			if self:valid() and self.tree_win and api.nvim_get_current_win() == self.tree_win then
+				if cur_buf ~= self.tree_buf and not self.syncing then
+					local win = self.tree_win
+					vim.schedule(function()
+						self:redirect_from_left(win)
+					end)
+				end
 				return
 			end
 			if self:valid() and api.nvim_get_current_win() == self.left_win then
@@ -758,6 +809,7 @@ function Session:watch()
 	end
 	local timer = vim.uv.new_timer()
 	self.refresh_timer = timer
+	self.head_sha = git.resolve_rev(self.root, "HEAD")
 	local pending_full = false
 	---@param full boolean falseなら比較元のコミットが動いた時だけrefreshする
 	local function schedule_refresh(full)
@@ -775,7 +827,8 @@ function Session:watch()
 				if not (self:valid() and require("agent-review")._session == self) then
 					return
 				end
-				if full_now or self:base_moved() then
+				-- ブランチモードではcommitしても比較元は動かないが、状態（未追跡→追加）は変わる。
+				if full_now or self:base_moved() or self:head_moved() then
 					require("agent-review").refresh()
 				end
 			end)
@@ -816,15 +869,35 @@ function Session:watch()
 	api.nvim_create_autocmd({ "FocusGained", "TermLeave" }, { group = self.augroup, callback = schedule_refresh })
 end
 
+---今の比較元になるべきコミット。ブランチモードは分岐元ブランチとの merge-base（rebaseで動く）。
+---@return string|nil
+function Session:target_sha()
+	if self.mode == "branch" then
+		return git.merge_base(self.root, "HEAD", self.base)
+	end
+	return git.resolve_rev(self.root, self.base)
+end
+
 ---指定したrev（HEAD等）が開いた時と別のコミットを指しているか。
 function Session:base_moved()
 	local opts = config.options.auto_refresh
 	if self.opts.follow_base == false or (type(opts) == "table" and opts.follow_base == false) then
 		return false
 	end
-	local sha = git.resolve_rev(self.root, self.base)
+	local sha = self:target_sha()
 	-- rebase途中などで解決できない時は動いていない扱いにする（refreshを繰り返さないため）。
 	return sha ~= nil and sha ~= self.base_sha
+end
+
+---HEADが前回確かめた時から別のコミットへ動いたか（commit・reset・checkout）。
+---.git内の書き込みでrefreshすると止まらなくなるので、HEADが動いた時だけを拾う。
+function Session:head_moved()
+	local sha = git.resolve_rev(self.root, "HEAD")
+	if sha == nil or sha == self.head_sha then
+		return false
+	end
+	self.head_sha = sha
+	return true
 end
 
 ---commitした変更をレビューから外すため、revが動いたら比較元をそのコミットへ移す。
@@ -833,8 +906,19 @@ function Session:follow_base()
 	if not self:base_moved() then
 		return false
 	end
-	self:set_base(git.resolve_rev(self.root, self.base))
+	self:set_base(self:target_sha())
 	return true
+end
+
+---比較のしかた（未commit / ブランチ全体 / 指定rev）を切り替える。
+---@param ctx { mode: "working"|"branch"|"rev", base: string, base_sha: string, label: string }
+function Session:set_mode(ctx)
+	self.mode = ctx.mode
+	self.base = ctx.base
+	self.label = ctx.label
+	self:set_base(ctx.base_sha)
+	-- 同じコミットでも見出し（モード名）は変わるので描き直す。
+	tree_view.render(self)
 end
 
 ---比較元を別のコミットに移す（commitへの追従、PRへの新しいpush）。
@@ -847,6 +931,7 @@ function Session:set_base(sha)
 	-- 表示中のバッファを今消すと左窓に別のバッファが入り追従が乱れるので、sync()で差し替えた後に消す。
 	self.stale_bufs = vim.list_extend(self.stale_bufs or {}, vim.tbl_values(self.base_bufs))
 	self.base_bufs = {}
+	self.base_cache = {}
 end
 
 function Session:wipe_stale_buffers()
@@ -947,6 +1032,7 @@ function Session:close()
 				api.nvim_set_current_tabpage(self.origin_tab)
 			end
 		else
+			tree_view.close(self)
 			if api.nvim_win_is_valid(self.right_win) then
 				set_diff(self.right_win, false)
 				vim.wo[self.right_win].winhighlight = ""
@@ -967,6 +1053,7 @@ function Session:close()
 	vim.list_extend(scratch, self.stale_bufs or {})
 	table.insert(scratch, self.empty_buf)
 	table.insert(scratch, self.placeholder_buf)
+	table.insert(scratch, self.tree_buf)
 	for _, buf in ipairs(scratch) do
 		if buf and api.nvim_buf_is_valid(buf) then
 			pcall(api.nvim_buf_delete, buf, { force = true })

@@ -28,17 +28,18 @@ how the new code fits into the rest of the codebase. If you open the file normal
 `agent-review.nvim` keeps both:
 
 ```
-┌─ BASE  HEAD  store.go ──────────────┬─ WORKING  [5/6] M store.go ──────────┐
-│ type Store interface {              │ type Store interface {               │
-│   Save(u User) User                 │   Save(u User) User                  │
-│   All() []User                      │   All() []User                       │
-│ ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   FindByEmail(email string) …  ◀ gd  │
-│ }                                   │ }                                    │
-│   read-only, at the base revision   │   your real buffer: LSP, edit, save  │
-└─────────────────────────────────────┴──────────────────────────────────────┘
-  quickfix: changed files / hunks                     Claude Code terminal →
+┌ Uncommitted 6 files ┬─ BASE  HEAD  store.go ───────────┬─ WORKING  [5/6] M store.go ────────┐
+│ ▾ internal/         │ type Store interface {           │ type Store interface {             │
+│   ▾ store/          │   Save(u User) User              │   Save(u User) User                │
+│       store.go +4 M │   All() []User                   │   All() []User                     │
+│       user.go  +9 A │ ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   FindByEmail(email string) … ◀ gd │
+│   main.go   +2 -1 M │ }                                │ }                                  │
+│ j/k: show the diff  │  read-only, at the base revision │  your real buffer: LSP, edit, save │
+└─────────────────────┴──────────────────────────────────┴────────────────────────────────────┘
+  changed files                                                       Claude Code terminal →
 ```
 
+- **File tree**: every changed file, like VS Code's explorer. Move the cursor and the diff follows; `m` switches between uncommitted changes and the whole branch.
 - **Right**: the real working-tree buffer. Your language server, keymaps and edits all work as usual.
 - **Left**: the same file at the base revision (`HEAD` by default), read-only, with syntax highlighting.
 - **Left follows right**: when you `gd`, `gr`, `<C-o>`, `:e`, `:cnext` or pick a Telescope entry on the right,
@@ -49,10 +50,12 @@ how the new code fits into the rest of the codebase. If you open the file normal
 - 🧭 **LSP-aware navigation**: go to definition, references and implementations across files, and the diff follows
 - 🎨 **VSCode-style colors**: removed lines are red and added lines are green, with stronger color on the changed characters (`inline:char`, `linematch`)
 - 🌳 **Syntax highlighting on both sides**: tree-sitter on the base side too, with no LSP diagnostics there
-- 📋 **Quickfix integration**: every changed file (or every hunk) goes into a quickfix list, so `]q` walks the whole review and wraps around at either end
+- 🌲 **File tree**: the changed files in a tree on the left, like VS Code's explorer, with status and `+added -removed` per file. Walk it with `j`/`k` and the diff follows
+- 🌿 **Uncommitted or whole branch**: review only what isn't committed yet, or everything since the branch left `main` (committed and not). Switch with `m`
+- 📋 **Quickfix integration** (optional): every changed file (or every hunk) in a quickfix list, so `]q` walks the whole review and wraps around at either end
 - ✅ **Viewed marks**: mark files as reviewed, like GitHub's "Viewed" checkbox. The mark clears itself when the agent changes the file again
 - 🧪 **Implementation-only review**: optionally leave test files (Go, JS/TS, Python, Lua, Rust conventions) out of the review
-- 🔄 **Auto refresh**: when the agent edits, creates or reverts files, the file list, quickfix, buffers and diff update by themselves, so you don't need to reopen the review
+- 🔄 **Auto refresh**: when the agent edits, creates, reverts or commits files, the tree, buffers and diff update by themselves, so you don't need to reopen the review
 - 🔭 **Telescope pickers**: changed files and changed hunks, with a syntax-highlighted inline diff preview
 - 🧹 **Handles every git status**: modified, added, untracked, deleted, renamed (diffed against the old path), gitignored and outside-repo files
 - 🤖 **Claude Code integration** ([claudecode.nvim](https://github.com/coder/claudecode.nvim)):
@@ -90,9 +93,11 @@ Commands and `<Plug>` mappings work without `setup()`; the default global keymap
 ## Quick start
 
 1. Let your agent edit some files.
-2. Press `<leader>dr` (or `:AgentReview`). A new tab opens: base on the left, working tree on the right, the changed files in quickfix.
-3. Navigate as you normally would: `gd`, `gr`, `<C-o>`, `]q`, `]f`, `<leader>dl`, and the left side keeps up.
-4. Press `<leader>dr` again (or `q` in the base window) to close the review.
+2. Press `<leader>dr` (or `:AgentReview`). A new tab opens: the changed files on the left, then the base, then the working tree.
+3. Walk the files in the tree with `j`/`k` (the diff follows), or press `<CR>` to jump into the diff. From the diff, `]f`/`[f` go to the next/previous file.
+4. Navigate as you normally would: `gd`, `gr`, `<C-o>`, `<leader>dl`, and the base side keeps up.
+5. Press `m` in the tree to see the whole branch instead of only what isn't committed yet.
+6. Press `<leader>dr` again (or `q` in the tree or the base window) to close the review.
 
 Review against something other than `HEAD`:
 
@@ -102,6 +107,56 @@ Review against something other than `HEAD`:
 ```
 
 When a branch name like `HEAD` moves to another commit (you or the agent commit, reset or check out), the base moves with it, so committed changes drop out of the review. A commit hash given directly stays put. Set `auto_refresh.follow_base = false` to keep the commit the review opened with.
+
+## File tree
+
+```
+ Uncommitted  6 files  +31 -4
+▾ internal/
+  ▾ store/
+      store.go       +4 M
+      user.go        +9 A
+  ▸ handler/
+  main.go         +2 -1 M
+  README.md          +3 M
+```
+
+- Folders come first, then files, sorted like VS Code (case doesn't matter). Folders with only one folder inside are shown on one line (`lua/agent-review/`).
+- Each file shows its line counts and status: `M` modified, `A` added, `U` untracked, `D` deleted, `R` renamed. Viewed files are dimmed with a `✓`.
+- The winbar shows the mode and the progress (`6 files` or `2/6 viewed`).
+- With [mini.icons](https://github.com/echasnovski/mini.icons) or [nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons), files get their icons.
+- The file on the right is highlighted, and the tree's cursor follows it when you move with `]f`, `gd` or a picker.
+
+| Key (in the tree) | Action |
+| --- | --- |
+| `j` / `k` | Move; the diff of the file under the cursor shows on the right (focus stays in the tree) |
+| `<CR>` / `o` | File: jump into the diff at the first change. Folder: fold / unfold |
+| `<Tab>` | Mark the file as viewed / not viewed (on a folder: every file inside) |
+| `m` | Switch between uncommitted changes and the whole branch |
+| `R` | Refresh |
+| `q` | Close the review |
+
+`<leader>de` (or `:AgentReviewTree`) moves to the tree from the diff, and back. Closing the tree window keeps the review open; `<leader>de` brings it back.
+Set `tree = { follow_cursor = false }` to only open files with `<CR>`, or `tree = { enabled = false }` to work without the tree.
+
+## Branch mode
+
+By default the review shows what isn't committed yet (against `HEAD`), so once the agent commits, those files leave the review. To read everything the agent did on the branch, committed or not, switch to branch mode:
+
+- `m` in the tree, `<leader>dm` in the diff, or `:AgentReviewMode` switches between the two.
+- `:AgentReviewBranch` opens the review in branch mode directly; `:AgentReviewBranch develop` compares with another branch.
+- The base is the **fork point**: the merge-base of `HEAD` and the main branch, like a pull request's "Files changed". Commits that landed on `main` after you branched don't show up.
+- The main branch is found automatically: `origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`. Set `branch.base` (for example `"origin/develop"`) to choose it yourself.
+- On `main` itself, branch mode shows what isn't pushed yet (against `origin/main`).
+- When there are no uncommitted changes, `<leader>dr` opens branch mode right away, so you can still read what the agent committed.
+
+The two modes refresh differently when the agent commits:
+
+| | Uncommitted | Branch |
+| --- | --- | --- |
+| The agent edits a file | It appears / its counts update | It appears / its counts update |
+| The agent commits a file | It leaves the review | It stays (its status updates, for example `U` → `A`) |
+| You rebase onto a newer `main` | — | The fork point moves with it |
 
 ## Keymaps
 
@@ -114,6 +169,9 @@ When a branch name like `HEAD` moves to another commit (you or the agent commit,
 | global | `<leader>dl` | Changed files picker |
 | global | `<leader>dh` | Changed hunks picker |
 | global | `<leader>dp` | GitHub pull requests (`:AgentReviewPR`) |
+| tree | `j` / `k`, `<CR>` / `o`, `<Tab>`, `m`, `R`, `q` | See [File tree](#file-tree) |
+| review (both sides) | `<leader>de` | Move to the file tree / back to the diff |
+| review (both sides) | `<leader>dm` | Switch between uncommitted changes and the whole branch |
 | review (both sides) | `]f` / `[f` | Next / previous changed file |
 | review (both sides + quickfix) | `]q` / `[q` | Next / previous quickfix entry, wrapping around at the ends |
 | base side | `q` | Close the review |
@@ -195,7 +253,11 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | `pr_conversation` | `<Plug>(agent-review-pr-conversation)` | PR: description, reviews and comments |
 | `pr_comment` | `<Plug>(agent-review-pr-comment)` (normal, visual) | PR: draft a comment on the line(s) |
 | `pr_submit` | `<Plug>(agent-review-pr-submit)` | PR: submit the drafted review |
-| `toggle_viewed` | `<Plug>(agent-review-toggle-viewed)` | Mark the file as viewed / not viewed (quickfix: the line under the cursor) |
+| `toggle_viewed` | `<Plug>(agent-review-toggle-viewed)` | Mark the file as viewed / not viewed (tree / quickfix: the line under the cursor) |
+| `toggle_mode` | `<Plug>(agent-review-toggle-mode)` | Switch between uncommitted changes and the whole branch |
+| `open_branch` | `<Plug>(agent-review-open-branch)` | Open the review in branch mode |
+| `tree_open` | `<Plug>(agent-review-tree-open)` | Tree: open the file under the cursor in the diff, or fold / unfold the folder |
+| `tree_focus` | `<Plug>(agent-review-tree-focus)` | Move to the file tree (opening it if closed), or back to the diff |
 | `qf_open` | `<Plug>(agent-review-qf-open)` | Open the review quickfix entry under the cursor in the working window |
 | `refresh` | `<Plug>(agent-review-refresh)` | Reload the changed files and the diff |
 | `quickfix_files` | `<Plug>(agent-review-quickfix-files)` | Quickfix: one entry per file |
@@ -209,6 +271,9 @@ vim.keymap.set("n", "<Tab>", function() require("agent-review").next_file() end)
 | Command | Description |
 | --- | --- |
 | `:AgentReview [rev]` | Open a review of the working tree against `rev` (default `HEAD`). Untracked files are included |
+| `:AgentReviewBranch [branch]` | Review the whole branch since it left the main branch (or `branch`), committed and not |
+| `:AgentReviewMode` | Switch between uncommitted changes and the whole branch |
+| `:AgentReviewTree` | Move to the file tree (opening it if closed), or back to the diff |
 | `:AgentReviewToggle [rev]` | Toggle the review |
 | `:AgentReviewClose` | Close the review tab |
 | `:AgentReviewFiles` | Pick a changed file |
@@ -239,7 +304,7 @@ Entries carry `filename`/`lnum`, so Telescope's `<C-q>` (send to quickfix) works
 
 ## Quickfix
 
-When the review opens, the changed files go into a quickfix list (`Agent Review: HEAD`) at the bottom of the review tab:
+The file tree replaces the quickfix list by default. Set `quickfix = { auto = true }` to also fill a quickfix list (`Agent Review: HEAD`) when the review opens, or run `:AgentReviewQuickfix` any time:
 
 ```
 internal/format/legacy.go|1 col 1| deleted   +0 -8
@@ -351,14 +416,14 @@ All the searches go to GitHub in **one** GraphQL request. Results are cached und
 
 Like the "Viewed" checkbox on a GitHub pull request, you can mark each file as reviewed:
 
-- `<Tab>` in the quickfix window toggles the file under the cursor; `<leader>dv` in the diff windows toggles the file on screen.
-- Marked files get a `✓` in quickfix (every hunk of the file in hunks mode), the quickfix title shows the progress (`Agent Review: HEAD (3/8 viewed)`), and the winbar says `✓ viewed`.
+- `<Tab>` in the tree (or the quickfix window) toggles the file under the cursor, or every file in a folder; `<leader>dv` in the diff windows toggles the file on screen.
+- Marked files are dimmed with a `✓` in the tree, the tree's winbar shows the progress (`3/8 viewed`), and the diff's winbar says `✓ viewed`. In quickfix they get a `✓` and the title shows the progress too.
 - The mark remembers the file's content. When the agent changes the file again, the mark goes away, so you only re-read what changed.
 - Marks are saved in `.git/agent-review/viewed.json` (per worktree) and survive closing and reopening the review.
 
 ## Reviewing implementation only
 
-Most of the time you want to read what the agent built, not every test it wrote. Set `tests.hide = true` to leave test files out of quickfix, `]f`/`[f`, the pickers and the `[i/n]` count. The quickfix title shows how many were left out (`(4 test files hidden)`). A test file you open yourself (for example with `gd`) still gets its diff.
+Most of the time you want to read what the agent built, not every test it wrote. Set `tests.hide = true` to leave test files out of the tree, quickfix, `]f`/`[f`, the pickers and the `[i/n]` count. The tree's winbar shows how many were left out (`4 tests hidden`). A test file you open yourself (for example with `gd`) still gets its diff.
 
 Built-in patterns:
 
@@ -382,9 +447,9 @@ require("agent-review").setup({
 
 While a review is open, the repository is watched for file changes (`.git/` is ignored). When the agent writes files, the review refreshes after a short debounce:
 
-- New changes are added to the file list and quickfix, and reverted files drop out.
-- After a commit, the base moves to the new commit, so the committed files drop out. This works in `git worktree` checkouts too, where the refs live outside the working directory.
-- If the file you are looking at drops out (committed or reverted), both windows move to the entry quickfix now selects: the next file in the list. A file you opened yourself that was never in the list (for example via `gd`) stays on screen. When nothing is left, both windows are cleared (the winbar says "no changes") and the review stays open; the next change the agent makes shows up there automatically.
+- New changes are added to the tree (and quickfix), the line counts update, and reverted files drop out.
+- After a commit, in the default (uncommitted) mode the base moves to the new commit, so the committed files drop out. In [branch mode](#branch-mode) they stay, and their status updates. This works in `git worktree` checkouts too, where the refs live outside the working directory.
+- If the file you are looking at drops out (committed or reverted), both windows move to the next file in the list (with quickfix on, the entry quickfix now selects). A file you opened yourself that was never in the list (for example via `gd`) stays on screen. When nothing is left, both windows are cleared (the winbar says "no changes") and the review stays open; the next change the agent makes shows up there automatically.
 - Buffers changed on disk are reloaded (`:checktime`) and the diff is recomputed.
 - It also refreshes on `FocusGained` and when you leave a terminal (`TermLeave`). On Linux, file watching only covers the top-level directory, so these events fill the gap.
 
@@ -406,8 +471,18 @@ require("agent-review").setup({
   fillchar = "╱",         -- filler shown opposite added/removed lines
   winbar = true,          -- " BASE  HEAD  path" / " WORKING  [3/6] M path"
   picker = "auto",        -- "auto" | "telescope" | "ui_select"
+  tree = {
+    enabled = true,       -- the changed-files tree on the left
+    width = 32,
+    follow_cursor = true, -- moving the cursor in the tree shows that file's diff
+    icons = true,         -- file icons from mini.icons / nvim-web-devicons, if installed
+  },
+  branch = {
+    base = nil,           -- branch mode compares with this branch; nil: origin/HEAD, origin/main, origin/master, main, master
+    remote = "origin",
+  },
   quickfix = {
-    auto = true,          -- fill the quickfix list when the review opens
+    auto = false,         -- fill the quickfix list when the review opens
     open = true,          -- open the quickfix window in the review tab
     height = 8,
     mode = "files",       -- "files" | "hunks"
@@ -426,9 +501,11 @@ require("agent-review").setup({
     global = { toggle = "<leader>dr", open_rev = "<leader>dR", files = "<leader>dl", hunks = "<leader>dh" },
     review = {
       next_file = "]f", prev_file = "[f", qf_next = "]q", qf_prev = "[q", toggle_viewed = "<leader>dv",
+      toggle_mode = "<leader>dm", tree_focus = "<leader>de",
       pr_thread = "<leader>dc", pr_conversation = "<leader>dC", pr_comment = "<leader>da", pr_submit = "<leader>dS",
     },
     base = { close = "q", send_to_claude = "<C-l>" },
+    tree = { tree_open = { "<CR>", "o" }, toggle_viewed = "<Tab>", toggle_mode = "m", refresh = "R", close = "q" },
     quickfix = { qf_open = "<CR>", toggle_viewed = "<Tab>" }, -- only in the review tab's quickfix window
   },
   pr = {
@@ -474,6 +551,10 @@ require("agent-review").setup({
 | `AgentReviewDelete` / `AgentReviewDeleteText` | Removed or changed lines on the base side / the changed characters |
 | `AgentReviewFiller` | The `╱╱╱` filler opposite one-sided lines |
 | `AgentReviewWinbarBase` / `AgentReviewWinbarWork` | `BASE` / `WORKING` labels in the winbar |
+| `AgentReviewTreeModified` / `Added` / `Renamed` / `Deleted` | File names in the tree, by status (link to `Changed` / `Added` / `Removed`) |
+| `AgentReviewTreeAddedCount` / `AgentReviewTreeRemovedCount` | `+n` / `-n` in the tree |
+| `AgentReviewTreeDir` / `AgentReviewTreeViewed` / `AgentReviewTreeCurrent` | Folders / viewed files / the file shown on the right |
+| `AgentReviewTreeMode` / `AgentReviewTreeModeBranch` | The mode label in the tree's winbar |
 
 ## Lua API
 
@@ -485,6 +566,9 @@ ar.open(base?, { path? })   -- open (or focus) a review, optionally at a root-re
 ar.open_at(path, lnum?)     -- open the review at a file and line (used by the pickers)
 ar.close()
 ar.toggle(base?)
+ar.open_branch(branch?)     -- review the whole branch since it left the main branch
+ar.toggle_mode()            -- uncommitted <-> whole branch
+ar.tree_focus()             -- move to the file tree / back to the diff
 ar.next_file() / ar.prev_file()
 ar.files() / ar.hunks()     -- pickers
 ar.quickfix("files" | "hunks")
@@ -499,7 +583,7 @@ ar.refresh()
 vim.api.nvim_create_autocmd("User", {
   pattern = { "AgentReviewOpen", "AgentReviewClose" },
   callback = function(ev)
-    -- ev.data = { root, base, base_sha, tab, left_win, right_win }
+    -- ev.data = { root, base, base_sha, mode, tab, left_win, right_win }
   end,
 })
 ```
@@ -527,9 +611,15 @@ Navigate on the right side; the left side follows.
 </details>
 
 <details>
-<summary>Can I review without the quickfix window?</summary>
+<summary>Can I use the quickfix list instead of the tree?</summary>
 
-Set `quickfix = { open = false }` to only fill the list, or `quickfix = { auto = false }` to skip it entirely.
+Yes: `tree = { enabled = false }, quickfix = { auto = true }` gives you the earlier layout. `quickfix = { open = false }` only fills the list without opening the window.
+</details>
+
+<details>
+<summary>The agent committed everything and the review is empty</summary>
+
+That's the uncommitted mode doing its job. Press `m` in the tree (or `<leader>dm`) to see the whole branch, including what was just committed.
 </details>
 
 ## Development

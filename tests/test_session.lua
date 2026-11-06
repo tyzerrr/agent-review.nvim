@@ -1,6 +1,6 @@
 local H = dofile("tests/helpers.lua")
 local eq = MiniTest.expect.equality
-local child = H.new_child()
+local child = H.new_child({ quickfix = true })
 
 local T = MiniTest.new_set({
 	hooks = {
@@ -72,8 +72,8 @@ T["open"]["creates a new tab with base on the left and working tree on the right
 	local s = state()
 	eq(s.tab_is_current, true)
 	eq(child.lua_get("#vim.api.nvim_list_tabpages()"), 2)
-	-- 左右のdiff窓 + 下部のquickfix
-	eq(child.lua_get("#vim.api.nvim_tabpage_list_wins(0)"), 3)
+	-- 左端のファイルツリー + 左右のdiff窓 + 下部のquickfix
+	eq(child.lua_get("#vim.api.nvim_tabpage_list_wins(0)"), 4)
 	eq(s.current_is_right, true)
 	eq(s.right.name, root .. "/a.lua")
 	eq(s.right.buftype, "")

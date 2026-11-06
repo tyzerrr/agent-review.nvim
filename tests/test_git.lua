@@ -76,4 +76,44 @@ T["git_dir() returns an absolute path"] = function()
 	eq(git.git_dir(root), root .. "/.git")
 end
 
+-- main から feature を切り、両方を1コミットずつ進める。
+local function forked_repo()
+	local root = H.make_repo({ ["a.txt"] = { "1" } })
+	local fork = vim.trim(H.git(root, { "rev-parse", "HEAD" }))
+	H.git(root, { "switch", "-q", "-c", "feature" })
+	H.write(root, "a.txt", { "feature" })
+	H.git(root, { "commit", "-q", "-am", "feature" })
+	H.git(root, { "switch", "-q", "main" })
+	H.write(root, "b.txt", { "main" })
+	H.git(root, { "add", "b.txt" })
+	H.git(root, { "commit", "-q", "-m", "main moves on" })
+	H.git(root, { "switch", "-q", "feature" })
+	return root, fork
+end
+
+T["merge_base() returns the fork point, or nil for unknown refs"] = function()
+	local root, fork = forked_repo()
+	eq(git.merge_base(root, "HEAD", "main"), fork)
+	eq(git.merge_base(root, "HEAD", "no-such-ref"), nil)
+end
+
+T["default_branch() prefers the remote's HEAD"] = function()
+	local root = forked_repo()
+	local origin = vim.fn.tempname()
+	H.git(vim.fn.getcwd(), { "clone", "-q", "--bare", root, origin })
+	H.git(root, { "remote", "add", "origin", origin })
+	H.git(root, { "fetch", "-q", "origin" })
+	H.git(root, { "remote", "set-head", "origin", "main" })
+	eq(git.default_branch(root), "origin/main")
+end
+
+T["default_branch() falls back to origin/main, main and master"] = function()
+	local root = forked_repo()
+	eq(git.default_branch(root), "main")
+	H.git(root, { "branch", "-q", "-m", "main", "master" })
+	eq(git.default_branch(root), "master")
+	H.git(root, { "branch", "-q", "-m", "master", "trunk" })
+	eq(git.default_branch(root), nil)
+end
+
 return T

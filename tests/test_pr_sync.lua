@@ -134,7 +134,7 @@ T["viewed"]["files marked viewed on GitHub are viewed in Neovim"] = function()
 	eq(viewed("gone.go"), false)
 	-- GitHubで見た後に変わったファイル（DISMISSED）は未レビュー
 	eq(viewed("long.go"), false)
-	eq(child.lua_get([[vim.fn.getqflist({ title = 1 }).title]]):find("1/4 viewed", 1, true) ~= nil, true)
+	eq(child.lua_get([[vim.wo[require("agent-review")._session.tree_win].winbar]]):find("1/4 viewed", 1, true) ~= nil, true)
 end
 
 T["viewed"]["toggling is queued, not sent right away"] = function()

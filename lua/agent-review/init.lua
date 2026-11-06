@@ -27,6 +27,7 @@ local function emit(event, s)
 			root = s.root,
 			base = s.base,
 			base_sha = s.base_sha,
+			mode = s.mode,
 			tab = s.tab,
 			left_win = s.left_win,
 			right_win = s.right_win,
@@ -57,11 +58,18 @@ local function detect_root()
 	return git.root(vim.fn.getcwd())
 end
 
+---@class AgentReviewContext
+---@field root string
+---@field base string
+---@field base_sha string
+---@field mode "working"|"branch"|"rev"
+---@field label string
+
 ---比較に必要な情報を解決する。セッションが無くてもピッカー等から使えるようにしている。
----@return { root: string, base: string, base_sha: string }|nil, string|nil err
-function M.resolve(base)
+---@return AgentReviewContext|nil, string|nil err
+function M.resolve(base, root)
 	base = base or config.options.base
-	local root = detect_root()
+	root = root or detect_root()
 	if not root then
 		return nil, "not inside a git repository"
 	end
@@ -69,16 +77,52 @@ function M.resolve(base)
 	if not sha then
 		return nil, "unknown revision: " .. base
 	end
-	return { root = root, base = base, base_sha = sha }
+	return { root = root, base = base, base_sha = sha, mode = base == "HEAD" and "working" or "rev", label = base }
+end
+
+---ブランチモードの比較元（分岐元ブランチとの merge-base）を解決する。
+---@param ref? string 分岐元のブランチ。nil なら branch.base か自動検出
+---@return AgentReviewContext|nil, string|nil err
+function M.resolve_branch(ref, root)
+	root = root or detect_root()
+	if not root then
+		return nil, "not inside a git repository"
+	end
+	local opts = config.options.branch or {}
+	ref = ref or opts.base or git.default_branch(root, opts.remote)
+	if not ref then
+		return nil, "could not find the branch to compare with; set branch.base (e.g. \"origin/main\")"
+	end
+	if not git.resolve_rev(root, ref) then
+		return nil, "unknown branch: " .. ref
+	end
+	local sha = git.merge_base(root, "HEAD", ref)
+	if not sha then
+		return nil, "no common ancestor with " .. ref
+	end
+	return { root = root, base = ref, base_sha = sha, mode = "branch", label = ref .. " (fork point)" }
+end
+
+local function new_session(ctx)
+	local Session = require("agent-review.session")
+	local s = Session.new(ctx.root, ctx.base, ctx.base_sha, { mode = ctx.mode, label = ctx.label })
+	s:refresh_files()
+	return s
+end
+
+local function discard(s)
+	pcall(api.nvim_del_augroup_by_id, s.augroup)
 end
 
 ---@param base? string 比較元のrev。省略時はconfig.base
----@param opts? { path?: string } 最初に表示するroot相対パス
+---@param opts? { path?: string, mode?: "branch", branch?: string } path: 最初に表示するroot相対パス
 function M.open(base, opts)
 	opts = opts or {}
 	local s = active()
 	if s then
-		if base == nil or base == s.base then
+		local same = opts.mode == "branch" and (s.mode == "branch" and (opts.branch == nil or opts.branch == s.base))
+			or (opts.mode == nil and (base == nil or base == s.base))
+		if same then
 			api.nvim_set_current_tabpage(s.tab)
 			if opts.path then
 				s:show(opts.path)
@@ -88,19 +132,38 @@ function M.open(base, opts)
 		M.close()
 	end
 
-	local ctx, err = M.resolve(base)
+	local ctx, err
+	if opts.mode == "branch" then
+		ctx, err = M.resolve_branch(opts.branch)
+	else
+		ctx, err = M.resolve(base)
+	end
 	if not ctx then
 		return notify(err, vim.log.levels.ERROR)
 	end
 
 	highlight.setup()
-	local Session = require("agent-review.session")
-	s = Session.new(ctx.root, ctx.base, ctx.base_sha)
-	s:refresh_files()
+	s = new_session(ctx)
+	if #s.review_files == 0 and ctx.mode == "working" then
+		-- エージェントが全部commitした後でも、ブランチで何をしたかは見られるようにする。
+		local bctx = M.resolve_branch(nil, ctx.root)
+		if bctx and bctx.base_sha ~= ctx.base_sha then
+			-- セッションは同じ名前のaugroupを使うので、先に捨ててから作る。
+			discard(s)
+			local bs = new_session(bctx)
+			if #bs.review_files > 0 then
+				notify("no uncommitted changes; showing the branch since " .. bctx.base)
+				s, ctx = bs, bctx
+			else
+				discard(bs)
+				return notify("no changes against " .. ctx.label .. " or " .. bctx.base)
+			end
+		end
+	end
 	if #s.review_files == 0 then
-		pcall(api.nvim_del_augroup_by_id, s.augroup)
+		discard(s)
 		local hidden = s.hidden_tests > 0 and (" (%d test files hidden)"):format(s.hidden_tests) or ""
-		return notify("no changes against " .. ctx.base .. hidden)
+		return notify("no changes against " .. ctx.label .. hidden)
 	end
 
 	local initial = opts.path or s:rel_path(api.nvim_get_current_buf())
@@ -148,6 +211,12 @@ function M.toggle(base)
 	else
 		M.open(base)
 	end
+end
+
+---ブランチ全体（分岐元からの変更。commit済みも含む）をレビューする。
+---@param ref? string 分岐元のブランチ。nil なら branch.base か自動検出
+function M.open_branch(ref)
+	M.open(nil, { mode = "branch", branch = ref })
 end
 
 local function with_session(fn)
@@ -214,7 +283,27 @@ function M.toggle_viewed()
 	end
 	local info = vim.fn.getwininfo(api.nvim_get_current_win())[1]
 	local rel
-	if info.quickfix == 1 then
+	if s.tree_win and api.nvim_get_current_win() == s.tree_win then
+		local tree_view = require("agent-review.tree_view")
+		local paths = tree_view.paths_at_cursor(s)
+		if #paths == 0 then
+			return
+		end
+		-- フォルダなら中のファイルをまとめて付ける。全部付いていれば外す。
+		local all = vim.iter(paths):all(function(p)
+			return s:is_viewed(p)
+		end)
+		for _, p in ipairs(paths) do
+			if s:is_viewed(p) == all then
+				s:set_viewed(p, not all)
+				if s.pr then
+					require("agent-review.pr.review").queue_viewed(s, p, not all)
+				end
+			end
+		end
+		s:viewed_changed()
+		return
+	elseif info.quickfix == 1 then
 		if info.loclist == 1 or vim.fn.getqflist({ id = 0 }).id ~= s.qf_id then
 			return false
 		end
@@ -322,12 +411,15 @@ local function refresh_session(s)
 	end
 	-- LSPジャンプ等で一覧外のファイルを見ている時は動かさない。一覧から消えた時だけ移る。
 	local was_listed = s:in_review(s.current_rel)
+	local old_idx = s.current_rel and s.review_index[s.current_rel]
 	local was_empty = s:showing_empty()
 	s:follow_base()
 	s:refresh_files()
 	if s.qf_id then
 		s:update_quickfix()
 	end
+	-- 一覧が同じでも行数は変わるので、ツリーは毎回描き直す。
+	require("agent-review.tree_view").render(s)
 	vim.cmd("checktime")
 	local dropped = was_listed and not s:in_review(s.current_rel)
 	if #s.review_files == 0 then
@@ -338,7 +430,7 @@ local function refresh_session(s)
 			s:sync()
 		end
 	elseif dropped or was_empty then
-		s:show_qf_selection()
+		s:show_qf_selection(old_idx)
 	else
 		s:sync()
 	end
@@ -353,6 +445,47 @@ local function refresh_session(s)
 	end
 	s.notified_empty = empty
 end
+
+---未commitの変更だけ ⇔ ブランチ全体 を切り替える。
+M.toggle_mode = with_session(function(s)
+	if s.pr then
+		return notify("pull requests are always compared with their base", vim.log.levels.WARN)
+	end
+	local ctx, err
+	if s.mode == "branch" then
+		ctx, err = M.resolve("HEAD", s.root)
+	else
+		ctx, err = M.resolve_branch(nil, s.root)
+	end
+	if not ctx then
+		return notify(err, vim.log.levels.ERROR)
+	end
+	s:set_mode(ctx)
+	refresh_session(s)
+	if #s.review_files > 0 and not s:in_review(s.current_rel) then
+		-- 新しいモードで変更の無いファイルを見続けても仕方ないので、先頭のファイルへ移る。
+		s:show(s.review_files[1].path)
+	end
+end)
+
+---ツリーのカーソル行を開く（フォルダなら畳む／開く）。
+M.tree_open = with_session(function(s)
+	require("agent-review.tree_view").activate(s)
+end)
+
+---ツリーへ移る（閉じていれば開く）。ツリーにいる時はdiffへ戻る。
+M.tree_focus = with_session(function(s)
+	local tree_view = require("agent-review.tree_view")
+	if tree_view.is_open(s) and api.nvim_get_current_win() == s.tree_win then
+		api.nvim_set_current_win(s.right_win)
+		return
+	end
+	if not tree_view.is_open(s) then
+		tree_view.open(s)
+		require("agent-review.resize").equalize(s)
+	end
+	api.nvim_set_current_win(s.tree_win)
+end)
 
 M.refresh = with_session(function(s)
 	refresh_session(s)

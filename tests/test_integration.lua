@@ -44,8 +44,8 @@ T["resize"]["re-balances the diff windows when a Claude terminal opens"] = funct
 	open_fake_claude(60)
 	local w = widths()
 	eq(math.abs(w[1] - w[2]) <= 1, true)
-	-- 200列 - 60列(claude) - 区切り2本 を左右で分ける
-	eq(w[1] + w[2], 200 - 60 - 2)
+	-- 200列 - 32列(ツリー) - 60列(claude) - 区切り3本 を左右で分ける
+	eq(w[1] + w[2], 200 - 32 - 60 - 3)
 	eq(child.lua_get("vim.api.nvim_win_get_width(0)"), 60)
 end
 
@@ -61,7 +61,7 @@ T["resize"]["re-balances when the Claude terminal is resized or closed"] = funct
 	child.lua("vim.wait(100)")
 	w = widths()
 	eq(math.abs(w[1] - w[2]) <= 1, true)
-	eq(w[1] + w[2], 199)
+	eq(w[1] + w[2], 200 - 32 - 2)
 end
 
 T["resize"]["respects manual resizing of the diff windows"] = function()
@@ -266,7 +266,9 @@ T["other windows"]["review-owned windows are not carried over"] = function()
 	H.write(root, "a.lua", { "y" })
 	child.lua("vim.cmd.cd(...)", { root })
 	child.lua([[require("agent-review").open()]])
+	child.cmd("AgentReviewQuickfix")
 	eq(child.lua_get([[vim.fn.getqflist({ winid = 0 }).winid ~= 0]]), true)
+	eq(child.lua_get([[vim.fn.bufwinid("agent-review://tree") ~= -1]]), true)
 	child.lua([[require("agent-review").close()]])
 	child.lua("vim.wait(100)")
 	eq(child.lua_get("#vim.api.nvim_tabpage_list_wins(0)"), 1)

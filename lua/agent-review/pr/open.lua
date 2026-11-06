@@ -66,6 +66,9 @@ function M.load_comments(s)
 		if s.qf_id and (viewed_changed or s.qf_mode == "comments") then
 			s:update_quickfix()
 		end
+		if viewed_changed then
+			require("agent-review.tree_view").render(s)
+		end
 		-- winbar（CIの状態・Viewed）と行のコメントを描き直す。
 		s:sync()
 	end)
