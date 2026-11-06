@@ -144,6 +144,17 @@ T["navigation"]["moving the cursor in the tree shows that file's diff"] = functi
 	eq(child.lua_get([[vim.wo[require("agent-review")._session.right_win].diff]]), true)
 end
 
+T["navigation"]["files shown from the tree get their filetype (so LSP and tree-sitter start)"] = function()
+	setup_repo()
+	open()
+	focus_tree()
+	child.lua([[vim.api.nvim_win_set_cursor(0, { 4, 0 })]])
+	child.type_keys("j")
+	child.type_keys("j")
+	eq(right_name():match("new%.lua$") ~= nil, true)
+	eq(child.lua_get([[vim.bo[vim.api.nvim_win_get_buf(require("agent-review")._session.right_win)].filetype]]), "lua")
+end
+
 T["navigation"]["<CR> on a file focuses the diff at its first change"] = function()
 	local root = setup_repo()
 	H.write(root, "c.lua", { "return 3", "", "", "", "-- changed far below" })

@@ -54,6 +54,8 @@ local function buffer(s)
 	api.nvim_create_autocmd("CursorMoved", {
 		group = s.augroup,
 		buffer = buf,
+		-- ここで :edit したファイルの FileType（LSPのattach・tree-sitter）を発火させるため。
+		nested = true,
 		callback = function()
 			M.on_cursor_moved(s)
 		end,

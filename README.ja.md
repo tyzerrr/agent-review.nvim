@@ -13,7 +13,7 @@
 
 [![Demo](assets/demo.jpg)](assets/demo.mp4)
 
-<sub>▶ 画像をクリックするとデモ動画が再生されます（54秒、mp4）</sub>
+<sub>▶ 画像をクリックするとデモ動画が再生されます（51秒、mp4）。ツリーで変更ファイルをたどる → LSPで移動 → エージェントがファイルを足し・commitするとツリーが追従 → <code>m</code>でブランチ全体に切り替え、までを見られます。</sub>
 
 </div>
 
@@ -331,7 +331,7 @@ internal/service/user.go|3 col 1| modified  +16 -3
 
 <sub>▶ 画像をクリックするとPRレビューのデモ動画が再生されます（64秒、mp4）。PRを選ぶ → スレッドを読む → 返信 → LSPで移動 → コメント → Viewed → 会話を読む → Approve までを、1回のリクエストで送ります。GitHubの代わりにローカルの仕組み（`scripts/demo/setup-pr.sh`）を使って録画しています。</sub>
 
-誰のプルリクエストでも同じレイアウトでレビューできます。右側にPRのコード（言語サーバー付き）、左側にベース、quickfixに変更されたファイル一覧、そしてレビューコメントがそれぞれの行の上に表示されます。さらに、あなた自身のレビュー（コメント、返信、解決、承認）を1回のリクエストでGitHubに送信できます。
+誰のプルリクエストでも同じレイアウトでレビューできます。右側にPRのコード（言語サーバー付き）、中央にベース、左端のツリーに変更されたファイル一覧、そしてレビューコメントがそれぞれの行の上に表示されます。さらに、あなた自身のレビュー（コメント、返信、解決、承認）を1回のリクエストでGitHubに送信できます。
 
 - `:AgentReviewPR 123`（または一覧から選択）でPR #123のレビューを開きます。
 - 差分はGitHubの「Files changed」と同じです。ターゲットブランチとのマージベースとの差分です（マージ済みPRの場合は、GitHubが記録したターゲットブランチとの差分）。
@@ -624,8 +624,8 @@ vim.api.nvim_create_autocmd("User", {
 ```sh
 make test                                   # all tests (mini.test, headless; clones test deps into ./deps)
 make test-file FILE=tests/test_session.lua  # a single file
-nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record assets/demo.mp4
-nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh scripts/demo/demo-pr.tape assets/demo-pr.mp4  # PRレビューのデモ
+POSTER_AT=37 nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record assets/demo.mp4
+POSTER_AT=45 nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh scripts/demo/demo-pr.tape assets/demo-pr.mp4  # PRレビューのデモ
 ```
 
 テストは一時ディレクトリに作られた実際のgitリポジトリに対して実行されます。外部プラグイン（claudecode.nvim）のみがスタブ化されています。
