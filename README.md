@@ -13,7 +13,7 @@ English | [日本語](README.ja.md)
 
 [![Demo](assets/demo.jpg)](assets/demo.mp4)
 
-<sub>▶ Click the image to watch the demo (54s, mp4)</sub>
+<sub>▶ Click the image to watch the demo (51s, mp4): walk the changed files in the tree, jump with LSP, watch the tree follow the agent as it adds and commits files, then switch to the whole branch with <code>m</code>.</sub>
 
 </div>
 
@@ -334,7 +334,7 @@ With [claudecode.nvim](https://github.com/coder/claudecode.nvim) installed:
 
 <sub>▶ Click the image to watch the PR review demo (64s, mp4): pick a PR, read the threads, reply, jump with LSP, comment, mark Viewed, read the conversation and approve, all in one request. Recorded against a local stand-in for GitHub (`scripts/demo/setup-pr.sh`).</sub>
 
-Review anyone's pull request in the same layout: the PR's code on the right with your language server, the base on the left, every changed file in quickfix, the review comments right on the lines they belong to, and your own review: comments, replies, resolves and approval, sent to GitHub in one request.
+Review anyone's pull request in the same layout: the PR's code on the right with your language server, the base in the middle, every changed file in the tree, the review comments right on the lines they belong to, and your own review: comments, replies, resolves and approval, sent to GitHub in one request.
 
 - `:AgentReviewPR 123` (or pick one from the list) opens PR #123 for review.
 - The diff is the same as GitHub's "Files changed": against the merge-base with the target branch (for merged PRs, the target branch as GitHub recorded it).
@@ -627,8 +627,8 @@ That's the uncommitted mode doing its job. Press `m` in the tree (or `<leader>dm
 ```sh
 make test                                   # all tests (mini.test, headless; clones test deps into ./deps)
 make test-file FILE=tests/test_session.lua  # a single file
-nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record assets/demo.mp4
-nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh scripts/demo/demo-pr.tape assets/demo-pr.mp4  # the PR review demo
+POSTER_AT=37 nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh  # re-record assets/demo.mp4
+POSTER_AT=45 nix shell nixpkgs#vhs nixpkgs#ttyd nixpkgs#ffmpeg -c scripts/demo/render.sh scripts/demo/demo-pr.tape assets/demo-pr.mp4  # the PR review demo
 ```
 
 Tests run against real git repositories in temp directories. Only external plugins (claudecode.nvim) are stubbed.

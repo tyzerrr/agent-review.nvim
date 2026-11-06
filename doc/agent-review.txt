@@ -248,8 +248,8 @@ selected.
 
                                                              *agent-review-pr*
 A pull request opens like a local review: its code on the right (with LSP),
-the merge-base with the target branch on the left, the changed files in
-quickfix. The code is checked out under
+the merge-base with the target branch in the middle, the changed files in
+the tree. The code is checked out under
 `<state>/github.com/owner/repo/<number>` from a private copy of the
 repository (`repo.git`), so nothing is written to your repository. The diff
 is computed locally from fetched commits; only the PR's metadata comes from
