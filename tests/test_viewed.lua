@@ -1,6 +1,6 @@
 local H = dofile("tests/helpers.lua")
 local eq = MiniTest.expect.equality
-local child = H.new_child()
+local child = H.new_child({ quickfix = true })
 
 local T = MiniTest.new_set({
 	hooks = {

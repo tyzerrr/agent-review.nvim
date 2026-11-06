@@ -21,9 +21,24 @@ M.defaults = {
 	winbar = true,
 	-- "auto": telescope.nvimがあれば使い、無ければvim.ui.select。"telescope" | "ui_select" で固定もできる。
 	picker = "auto",
+	-- 画面左の変更ファイルのツリー（VSCodeのエクスプローラー風）。
+	tree = {
+		enabled = true,
+		width = 32,
+		-- ツリーでカーソルを動かすと、その行のファイルのdiffを右に出す（フォーカスはツリーに残る）。
+		follow_cursor = true,
+		-- mini.icons か nvim-web-devicons があればファイルの種類のアイコンを付ける。
+		icons = true,
+	},
+	-- ブランチモード（:AgentReviewBranch、ツリーで m）。ブランチが分岐した地点からの変更を、commit済みも含めて見る。
+	branch = {
+		-- 分岐元のブランチ。nil なら <remote>/HEAD → <remote>/main → <remote>/master → main → master の順に探す。
+		base = nil,
+		remote = "origin",
+	},
 	quickfix = {
-		-- レビューを開いた時に変更ファイルをquickfixリストへ入れる。
-		auto = true,
+		-- レビューを開いた時に変更ファイルをquickfixリストへ入れる（ツリーで足りるので既定は無効）。
+		auto = false,
 		-- レビュータブの下部にquickfixウィンドウを開く。
 		open = true,
 		height = 8,
@@ -94,6 +109,8 @@ M.defaults = {
 			qf_next = "]q",
 			qf_prev = "[q",
 			toggle_viewed = "<leader>dv",
+			toggle_mode = "<leader>dm",
+			tree_focus = "<leader>de",
 			pr_thread = "<leader>dc",
 			pr_conversation = "<leader>dC",
 			pr_comment = "<leader>da",
@@ -104,6 +121,14 @@ M.defaults = {
 		base = {
 			close = "q",
 			send_to_claude = "<C-l>",
+		},
+		-- ファイルツリーの窓だけに設定されるキー（reviewのキーもここで使える）。
+		tree = {
+			tree_open = { "<CR>", "o" },
+			toggle_viewed = "<Tab>",
+			toggle_mode = "m",
+			refresh = "R",
+			close = "q",
 		},
 		-- レビュータブのquickfix窓だけに設定されるキー（reviewのキーもここで使える）。
 		-- agent-reviewのリスト以外では、グローバルの割り当てや標準の動きに任せる。

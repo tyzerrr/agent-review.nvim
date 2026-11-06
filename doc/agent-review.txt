@@ -16,8 +16,9 @@ CONTENTS                                               *agent-review-contents*
 ==============================================================================
 1. INTRODUCTION                                           *agent-review-intro*
 
-agent-review.nvim opens a review tab with two windows:
+agent-review.nvim opens a review tab with a file tree and two windows:
 
+  tree   the changed files, like VS Code's explorer (|agent-review-tree|)
   left   the file at a base revision (default HEAD), read-only, in a
          `nofile` scratch buffer, so no LSP client attaches
   right  the real working-tree buffer, where LSP, edits and saves work
@@ -46,6 +47,18 @@ are created by setup().
     When the revision names a ref such as HEAD and the ref moves (commit,
     reset, checkout), the base moves with it, so committed changes drop out.
     A commit hash stays put. See `auto_refresh.follow_base`.
+
+:AgentReviewBranch [branch]                               *:AgentReviewBranch*
+    Open a review of the whole branch: everything since it left the main
+    branch (or [branch]), committed and uncommitted. See
+    |agent-review-branch|.
+
+:AgentReviewMode                                            *:AgentReviewMode*
+    Switch the open review between uncommitted changes and the whole branch.
+
+:AgentReviewTree                                            *:AgentReviewTree*
+    Move to the changed-files tree (opening it if it was closed). In the
+    tree, move back to the diff. See |agent-review-tree|.
 
 :AgentReviewToggle [rev]                                  *:AgentReviewToggle*
     Toggle the review.
@@ -96,13 +109,18 @@ Defaults:
   review  ]f          next_file       [f          prev_file
           ]q          qf_next         [q          qf_prev
           <leader>dv  toggle_viewed
+          <leader>dm  toggle_mode     <leader>de  tree_focus
           <leader>dc  pr_thread       <leader>dC  pr_conversation
           <leader>da  pr_comment (n,x) <leader>dS pr_submit
   base    q           close           <C-l> (x)   send_to_claude
+  tree    <CR> o      tree_open       <Tab>       toggle_viewed
+          m           toggle_mode     R           refresh
+          q           close
   quickfix <CR>      qf_open         <Tab>       toggle_viewed
 
 "review" keys are buffer-local on both review windows; "base" keys only on
-the base window; "quickfix" keys only on the quickfix window in the review
+the base window; "tree" keys only on the file tree, which also gets the
+"review" keys; "quickfix" keys only on the quickfix window in the review
 tab, which also gets the "review" keys. Outside the review tab, or on a
 quickfix list agent-review didn't create, the keys fall back to your global
 mapping (e.g. flash.nvim on <CR>) or the built-in command. Every value is
@@ -129,6 +147,10 @@ Actions and their <Plug> mappings:
   pr_comment       <Plug>(agent-review-pr-comment)        (normal, visual)
   pr_submit        <Plug>(agent-review-pr-submit)
   toggle_viewed    <Plug>(agent-review-toggle-viewed)
+  toggle_mode      <Plug>(agent-review-toggle-mode)
+  open_branch      <Plug>(agent-review-open-branch)
+  tree_open        <Plug>(agent-review-tree-open)
+  tree_focus       <Plug>(agent-review-tree-focus)
   refresh          <Plug>(agent-review-refresh)
   quickfix_files   <Plug>(agent-review-quickfix-files)
   quickfix_hunks   <Plug>(agent-review-quickfix-hunks)
@@ -146,7 +168,9 @@ Actions and their <Plug> mappings:
     fillchar = "╱",
     winbar = true,
     picker = "auto",            -- "auto" | "telescope" | "ui_select"
-    quickfix = { auto = true, open = true, height = 8, mode = "files" },
+    tree = { enabled = true, width = 32, follow_cursor = true, icons = true },
+    branch = { base = nil, remote = "origin" },
+    quickfix = { auto = false, open = true, height = 8, mode = "files" },
     tests = { hide = false, patterns = nil, extra_patterns = {} },
     auto_refresh = { enabled = true, debounce = 200,    -- or false
                      follow_base = true },
@@ -154,8 +178,11 @@ Actions and their <Plug> mappings:
       global = { toggle = "<leader>dr", open_rev = "<leader>dR",
                  files = "<leader>dl", hunks = "<leader>dh" },
       review = { next_file = "]f", prev_file = "[f",
-                 qf_next = "]q", qf_prev = "[q", toggle_viewed = "<leader>dv" },
+                 qf_next = "]q", qf_prev = "[q", toggle_viewed = "<leader>dv",
+                 toggle_mode = "<leader>dm", tree_focus = "<leader>de" },
       base = { close = "q", send_to_claude = "<C-l>" },
+      tree = { tree_open = { "<CR>", "o" }, toggle_viewed = "<Tab>",
+               toggle_mode = "m", refresh = "R", close = "q" },
       quickfix = { qf_open = "<CR>", toggle_viewed = "<Tab>" },
     },
     claude = { focus_after_send = true, terminal_pattern = "claude",
@@ -168,26 +195,50 @@ Actions and their <Plug> mappings:
                                                    *agent-review-auto-refresh*
 While a review is open, the repository is watched for file changes (`.git/`
 is ignored), and the review refreshes `auto_refresh.debounce` ms after the
-last write: the file list and quickfix are rebuilt, changed buffers are
+last write: the file tree (and quickfix) are rebuilt, changed buffers are
 reloaded with |:checktime| and the diff is updated. |FocusGained| and
 |TermLeave| also refresh, which covers Linux, where only the top-level
 directory can be watched. Buffers with unsaved edits are never overwritten
 silently (|W12|).
 
 Changes inside `.git/` don't trigger a refresh by themselves, but they make
-agent-review check whether the base ref moved. When it did (for example
-after a commit) and `follow_base` is true, the base moves to the new commit
-and the committed files drop out of the review. In a `git worktree`, the
+agent-review check whether the base ref or HEAD moved. When the base moved
+(for example after a commit in the uncommitted mode) and `follow_base` is
+true, the base moves to the new commit and the committed files drop out of
+the review. In branch mode a commit keeps the files and updates their status. In a `git worktree`, the
 shared git directory (outside the working directory) is watched as well.
 When the file shown in the review drops out of the list, both windows move
-to the entry quickfix selects next. When nothing is left, both windows are
+to the next file in the list (with quickfix, the entry it selects next). When nothing is left, both windows are
 cleared until the next change shows up. Files that were never in the list (an
 LSP jump, for example) stay on screen.
+
+                                                           *agent-review-tree*
+The changed files are shown in a tree on the left of the review tab, like
+VS Code's explorer: folders first, then files, case-insensitive. Each file
+shows `+added -removed` and its status (M A U D R); viewed files are dimmed
+with a check mark. The winbar shows the mode and the progress. Moving the
+cursor shows the file's diff on the right while the focus stays in the tree
+(`tree.follow_cursor`). <CR> jumps into the diff at the first change, or
+folds a folder. <Tab> marks the file (or every file in a folder) as viewed.
+Closing the tree window keeps the review; |:AgentReviewTree| reopens it.
+File icons come from mini.icons or nvim-web-devicons when installed.
+
+                                                         *agent-review-branch*
+By default the review compares the working tree with HEAD ("Uncommitted"),
+so a commit makes its files leave the review. Branch mode compares with the
+fork point instead: the merge-base of HEAD and the main branch, like a pull
+request's "Files changed". Committed and uncommitted work both show, and a
+commit only updates the status. The main branch is `branch.base`, or the
+first of `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`
+that exists. Switch with `m` in the tree, <leader>dm, |:AgentReviewMode|,
+or open it with |:AgentReviewBranch|. When nothing is uncommitted, opening
+the review goes to branch mode directly.
 
 ==============================================================================
 6. PICKERS AND QUICKFIX                                 *agent-review-pickers*
 
-When a review opens, the changed files are put into a quickfix list titled
+With `quickfix.auto = true` (off by default; the file tree replaces it) or
+|:AgentReviewQuickfix|, the changed files are put into a quickfix list titled
 "Agent Review: <base>" and its window opens at the bottom of the review tab.
 Files opened from the base window are moved to the working window.
 <CR> in that quickfix window opens the entry in the working window.
@@ -284,6 +335,9 @@ terminals) are reopened in the tab you return to when the review closes.
   ar.open_at("src/x.lua", 42)
   ar.close()
   ar.toggle(base)
+  ar.open_branch(branch)        -- the whole branch, see |agent-review-branch|
+  ar.toggle_mode()              -- uncommitted <-> whole branch
+  ar.tree_focus()               -- move to the file tree / back to the diff
   ar.next_file()  ar.prev_file()
   ar.files()      ar.hunks()
   ar.quickfix("files" | "hunks")
@@ -293,7 +347,7 @@ terminals) are reopened in the tab you return to when the review closes.
 <
                                     *AgentReviewOpen* *AgentReviewClose*
 |User| autocommands fire when a review opens or closes, with `data` set to
-`{ root, base, base_sha, tab, left_win, right_win }`.
+`{ root, base, base_sha, mode, tab, left_win, right_win }`.
 
 ==============================================================================
 9. HIGHLIGHTS                                        *agent-review-highlights*
@@ -305,6 +359,13 @@ terminals) are reopened in the tab you return to when the review closes.
   AgentReviewFiller       filler opposite one-sided lines
   AgentReviewWinbarBase   "BASE" label
   AgentReviewWinbarWork   "WORKING" label
+  AgentReviewTreeModified / AgentReviewTreeAdded / AgentReviewTreeRenamed /
+  AgentReviewTreeDeleted  file names in the tree, by status
+  AgentReviewTreeAddedCount / AgentReviewTreeRemovedCount  "+n" / "-n"
+  AgentReviewTreeDir      folders in the tree
+  AgentReviewTreeViewed   viewed files in the tree
+  AgentReviewTreeCurrent  the file shown on the right
+  AgentReviewTreeMode / AgentReviewTreeModeBranch  mode label in the tree
 
 By default they are derived from the |hl-Normal| background. Override them
 with `highlights = { AgentReviewAdd = { bg = "#1f3a28" } }`.

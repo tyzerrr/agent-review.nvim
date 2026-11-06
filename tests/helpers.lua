@@ -35,12 +35,21 @@ function H.git(root, args)
 	return run(root, vim.list_extend({ "git" }, args))
 end
 
-function H.new_child()
+---@param opts? { quickfix?: boolean } quickfix: 以前の既定（開いた時にquickfixへ入れて開く）で動かす
+function H.new_child(opts)
 	local child = MiniTest.new_child_neovim()
 	child.setup = function()
 		child.restart({ "-u", "scripts/minimal_init.lua" })
 		child.o.columns = 200
 		child.o.lines = 50
+		if opts and opts.quickfix then
+			-- 後から setup() を呼ぶテストでも保たれるよう、既定値の方を書き換える。
+			child.lua([[
+				local c = require("agent-review.config")
+				c.defaults.quickfix.auto = true
+				c.options.quickfix.auto = true
+			]])
+		end
 	end
 	return child
 end

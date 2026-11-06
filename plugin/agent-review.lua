@@ -24,6 +24,19 @@ end
 cmd("AgentReview", function(o)
 	require("agent-review").open(o.args ~= "" and o.args or nil)
 end, { nargs = "?", complete = complete_rev, desc = "Review changes against a git revision" })
+cmd("AgentReviewBranch", function(o)
+	require("agent-review").open_branch(o.args ~= "" and o.args or nil)
+end, {
+	nargs = "?",
+	complete = complete_rev,
+	desc = "Review the whole branch (committed and uncommitted) since it left main, or the given branch",
+})
+cmd("AgentReviewMode", function()
+	require("agent-review").toggle_mode()
+end, { desc = "Switch between uncommitted changes and the whole branch" })
+cmd("AgentReviewTree", function()
+	require("agent-review").tree_focus()
+end, { desc = "Move to the changed-files tree (opens it if closed)" })
 cmd("AgentReviewToggle", function(o)
 	require("agent-review").toggle(o.args ~= "" and o.args or nil)
 end, { nargs = "?", complete = complete_rev, desc = "Toggle the review session" })

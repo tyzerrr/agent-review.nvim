@@ -22,11 +22,16 @@ local function to_text(lines)
 	return table.concat(lines, "\n") .. "\n"
 end
 
+---@param cache? table<string, string[]> base側の内容。同じコミットの同じファイルは変わらないので使い回す。
 ---@return string[] base, string[] work
-function M.contents(root, base_sha, file)
+function M.contents(root, base_sha, file, cache)
 	local base = {}
 	if file.status ~= "A" and file.status ~= "?" then
-		base = git.show(root, base_sha, file.old_path or file.path) or {}
+		local key = base_sha .. ":" .. (file.old_path or file.path)
+		base = cache and cache[key] or git.show(root, base_sha, file.old_path or file.path) or {}
+		if cache then
+			cache[key] = base
+		end
 	end
 	local abs = root .. "/" .. file.path
 	local work = {}
@@ -53,8 +58,8 @@ end
 ---@field work string[]
 
 ---@return AgentReviewChange
-function M.compute(root, base_sha, file)
-	local base, work = M.contents(root, base_sha, file)
+function M.compute(root, base_sha, file, cache)
+	local base, work = M.contents(root, base_sha, file, cache)
 	local indices = vim.diff(to_text(base), to_text(work), { result_type = "indices", algorithm = "histogram" }) or {}
 	local hunks, added, removed = {}, 0, 0
 	for _, h in ipairs(indices) do
@@ -67,9 +72,9 @@ function M.compute(root, base_sha, file)
 end
 
 ---@return AgentReviewChange[]
-function M.collect(root, base_sha, files)
+function M.collect(root, base_sha, files, cache)
 	return vim.tbl_map(function(f)
-		return M.compute(root, base_sha, f)
+		return M.compute(root, base_sha, f, cache)
 	end, files)
 end
 

@@ -69,6 +69,29 @@ function M.resolve_rev(root, rev)
 	return ok and vim.trim(out) or nil
 end
 
+---@return string|nil sha 共通の祖先が無い・refが無ければnil
+function M.merge_base(root, a, b)
+	local ok, out = run(root, { "merge-base", a, b })
+	return ok and vim.trim(out) or nil
+end
+
+---ブランチの分岐元として比べる既定のブランチ。リモートのHEAD（clone元の既定ブランチ）を優先する。
+---@param remote? string
+---@return string|nil ref "origin/main" など
+function M.default_branch(root, remote)
+	remote = remote or "origin"
+	local ok, out = run(root, { "symbolic-ref", "--quiet", "--short", ("refs/remotes/%s/HEAD"):format(remote) })
+	if ok and vim.trim(out) ~= "" and M.resolve_rev(root, vim.trim(out)) then
+		return vim.trim(out)
+	end
+	for _, ref in ipairs({ remote .. "/main", remote .. "/master", "main", "master" }) do
+		if M.resolve_rev(root, ref) then
+			return ref
+		end
+	end
+	return nil
+end
+
 ---@class AgentReviewFile
 ---@field path string root相対パス（変更後）
 ---@field status "M"|"A"|"D"|"R"|"C"|"T"|"?"

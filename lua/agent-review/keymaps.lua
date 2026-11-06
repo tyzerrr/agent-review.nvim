@@ -130,6 +130,34 @@ M.actions = {
 		end,
 		plug = "toggle-viewed",
 	},
+	toggle_mode = {
+		desc = "Switch between uncommitted changes and the whole branch",
+		fn = function()
+			ar().toggle_mode()
+		end,
+		plug = "toggle-mode",
+	},
+	open_branch = {
+		desc = "Open review of the whole branch",
+		fn = function()
+			ar().open_branch()
+		end,
+		plug = "open-branch",
+	},
+	tree_open = {
+		desc = "Tree: open the file / fold the folder under the cursor",
+		fn = function()
+			ar().tree_open()
+		end,
+		plug = "tree-open",
+	},
+	tree_focus = {
+		desc = "Move to the file tree (or back to the diff)",
+		fn = function()
+			ar().tree_focus()
+		end,
+		plug = "tree-focus",
+	},
 	refresh = {
 		desc = "Refresh review",
 		fn = function()
@@ -293,7 +321,7 @@ function M.fallthrough(mode, lhs)
 end
 
 ---レビュータブ内のバッファへ設定するキーの一覧。
----@param side "base"|"work"|"quickfix"
+---@param side "base"|"work"|"quickfix"|"tree"
 ---@return { mode: string|string[], lhs: string[], fn: function, desc: string }[]
 function M.buffer_specs(km, side)
 	if not km then
